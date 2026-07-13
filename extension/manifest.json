@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Placement FocusBar",
+  "version": "0.1",
+  "description": "Helps engineering students prepare for placements.",
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "side_panel": {
+    "default_path": "side_panel/focusbar.html"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "permissions": ["sidePanel", "storage", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-scripts/job-page-parser.js", "content-scripts/coding-page-parser.js"]
+    }
+  ]
+}
