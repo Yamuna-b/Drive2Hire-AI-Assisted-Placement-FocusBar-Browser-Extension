@@ -1,11 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Placement FocusBar",
-  "version": "0.1",
+  "version": "0.2.3",
   "description": "Helps engineering students prepare for placements.",
   "icons": {
+    "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Open Placement FocusBar"
   },
   "side_panel": {
     "default_path": "side_panel/focusbar.html"
@@ -13,12 +17,20 @@
   "background": {
     "service_worker": "background/service-worker.js"
   },
-  "permissions": ["sidePanel", "storage", "activeTab", "scripting"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": ["sidePanel", "storage", "activeTab", "scripting", "tabs"],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*",
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*",
+    "https://www.naukri.com/*",
+    "https://naukri.com/*"
+  ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content-scripts/job-page-parser.js", "content-scripts/coding-page-parser.js"]
+      "js": ["content-scripts/job-page-parser.js", "content-scripts/coding-page-parser.js"],
+      "run_at": "document_idle"
     }
   ]
 }

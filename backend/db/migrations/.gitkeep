@@ -1,0 +1,2 @@
+# Alembic migrations will live here in a later phase.
+# Phase 1 uses SQLAlchemy create_all on startup for local development.

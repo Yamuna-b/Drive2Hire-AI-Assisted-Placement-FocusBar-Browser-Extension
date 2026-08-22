@@ -3,7 +3,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Example: DATABASE_URL=postgresql+asyncpg://user:password@localhost/placement_focusbar
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://localhost/placement_focusbar")
-
-# Additional config can be added here
+# Leave unset to run without PostgreSQL (Phases 1–2 work fine without DB).
+# When ready, copy .env.example → .env and set your local Postgres credentials.
+DATABASE_URL = os.getenv("DATABASE_URL") or None
