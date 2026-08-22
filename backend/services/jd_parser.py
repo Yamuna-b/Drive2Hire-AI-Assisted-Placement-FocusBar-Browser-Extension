@@ -42,7 +42,7 @@ def _split_jd_sections(jd_text: str) -> dict:
     current = "other"
 
     heading_re = re.compile(
-        r"^[\s\*\-•]*([A-Za-z0-9][A-Za-z0-9\s/&\-]{2,60})\s*:?\s*$"
+        r"^[\s\*\-•]*([A-Za-z0-9][A-Za-z0-9\s/\&\-]{2,60})\s*:?\s*$"
     )
 
     for line in lines:
@@ -69,6 +69,23 @@ def _split_jd_sections(jd_text: str) -> dict:
     }
 
 
+def _extract_skill_with_duration(text: str) -> list:
+    """Return list of dicts with skill name and optional duration.
+    Recognises patterns like '2+ years Docker' or 'Docker (2+ years)'.
+    """
+    results = []
+    # Simple pattern: duration followed by skill name
+    pattern1 = re.compile(r"(?P<duration>\d+\+?\s*years?)\s+(?P<skill>[A-Za-z][A-Za-z0-9+\-#]*)", re.IGNORECASE)
+    # Alternate: skill name followed by duration in parentheses
+    pattern2 = re.compile(r"(?P<skill>[A-Za-z][A-Za-z0-9+\-#]*)\s*\((?P<duration>\d+\+?\s*years?)\)", re.IGNORECASE)
+
+    for match in pattern1.finditer(text):
+        results.append({"name": match.group("skill"), "duration": match.group("duration")})
+    for match in pattern2.finditer(text):
+        results.append({"name": match.group("skill"), "duration": match.group("duration")})
+    return results
+
+
 def _find_skills_in_text(text: str, skills_config: list) -> list:
     if not text:
         return []
@@ -83,38 +100,51 @@ def _find_skills_in_text(text: str, skills_config: list) -> list:
             continue
 
         for term in entry["terms"]:
-            pattern = r"\b" + re.escape(term).replace(r"\ ", r"\s+") + r"\b"
+            # Build a proper regex: word-boundary + escaped term (multi-word terms allow \s+) + word-boundary
+            escaped = re.escape(term).replace(r"\ ", r"\s+")
+            pattern = r"\b" + escaped + r"\b"
             if re.search(pattern, lower_text):
                 found.append(canonical)
                 seen.add(canonical)
                 break
-
     return found
 
 
 def parse_jd(jd_text: str) -> dict:
-    """Extract mandatory and nice-to-have skills from a job description."""
+    """Extract mandatory and nice‑to‑have skills from a job description, preserving any detected duration constraints."""
     skills_config = _load_skills_config()
     sections = _split_jd_sections(jd_text or "")
 
+    # Base skill names
     mandatory = _find_skills_in_text(sections["mandatory"], skills_config)
     nice_to_have = _find_skills_in_text(sections["nice_to_have"], skills_config)
 
-    # Skills mentioned outside labelled sections default to mandatory.
+    # Extract skill + duration pairs from each section
+    def enrich(skills_list, section_text):
+        enriched = []
+        duration_hits = _extract_skill_with_duration(section_text)
+        duration_map = {hit["name"].lower(): hit["duration"] for hit in duration_hits}
+        for name in skills_list:
+            dur = duration_map.get(name.lower())
+            enriched.append({"name": name, "duration": dur})
+        return enriched
+
+    mandatory_objs = enrich(mandatory, sections["mandatory"])
+    nice_objs = enrich(nice_to_have, sections["nice_to_have"]) 
+
+    # Fallback: look for any skill mentions outside labelled sections and treat as mandatory
     fallback = _find_skills_in_text(sections["other"], skills_config)
-    mandatory_set = set(mandatory)
-    nice_set = set(nice_to_have)
+    for name in fallback:
+        if name not in mandatory and name not in nice_to_have:
+            mandatory_objs.append({"name": name, "duration": None})
+            mandatory.append(name)
 
-    for skill in fallback:
-        if skill not in mandatory_set and skill not in nice_set:
-            mandatory.append(skill)
-            mandatory_set.add(skill)
-
-    # If no section headings matched, scan the full JD as mandatory.
+    # If nothing detected, fallback to scanning whole JD as mandatory
     if not mandatory and not nice_to_have and jd_text:
-        mandatory = _find_skills_in_text(jd_text, skills_config)
+        all_skills = _find_skills_in_text(jd_text, skills_config)
+        mandatory_objs = [{"name": n, "duration": None} for n in all_skills]
 
     return {
-        "mandatory_skills": mandatory,
-        "nice_to_have_skills": nice_to_have,
+        "mandatory_skills": mandatory_objs,
+        "nice_to_have_skills": nice_objs,
     }

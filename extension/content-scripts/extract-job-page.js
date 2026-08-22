@@ -1,4 +1,3 @@
-// Injected on demand — return value is passed back to the service worker.
 (function () {
   function pickText(root, selectors) {
     for (let i = 0; i < selectors.length; i++) {
@@ -34,7 +33,6 @@
 
   if (/linkedin\.com\/jobs/.test(url)) {
     const isJobView = /linkedin\.com\/jobs\/view\//.test(url);
-
     const root = isJobView
       ? document
       : pickRoot([
@@ -77,38 +75,25 @@
       const h1 = root.querySelector('h1');
       if (h1 && h1.innerText) title = h1.innerText.trim();
     }
-
     if (!title) {
       const ogTitle = document.querySelector('meta[property="og:title"]');
       if (ogTitle && ogTitle.content) {
         title = ogTitle.content.replace(/\s*\|\s*LinkedIn\s*$/i, '').trim();
       }
     }
-
     if (!company) {
-      const topCard = root.querySelector(
-        '.job-details-jobs-unified-top-card, .jobs-unified-top-card, .topcard'
-      );
+      const topCard = root.querySelector('.job-details-jobs-unified-top-card, .jobs-unified-top-card, .topcard');
       const scope = topCard || root;
       const link = scope.querySelector('a[href*="/company/"]');
       if (link && link.innerText) company = link.innerText.trim();
     }
-
     if (!jd) {
       const desc = root.querySelector('[class*="description"]');
       if (desc && desc.innerText) jd = desc.innerText.trim();
     }
-
     if (!title && !company && !jd) {
-      return {
-        ok: false,
-        reason: 'no_job_data',
-        hint: isJobView
-          ? 'Sign in to LinkedIn and refresh this page (F5), then try Analyze again.'
-          : 'Click a job in the list, wait 2 seconds, then try Analyze again.',
-      };
+      return { ok: false, reason: 'no_job_data', hint: isJobView ? 'Sign in to LinkedIn and refresh this page (F5), then try Analyze again.' : 'Click a job in the list, wait 2 seconds, then try Analyze again.' };
     }
-
     return { ok: true, payload: { title, company, jd, source: url } };
   }
 
@@ -117,17 +102,11 @@
     const title = pickText(root, ['.jobTitle span', 'h1.jd-header-title']);
     const company = pickText(root, ['.compName', '.jd-header-comp-name']);
     const jd = pickText(root, ['.job-description', '.dang-inner-html', '.jd-desc']);
-
     if (!title && !company && !jd) {
       return { ok: false, reason: 'no_job_data', hint: 'Naukri job text not found. Refresh and try again.' };
     }
-
     return { ok: true, payload: { title, company, jd, source: url } };
   }
 
-  return {
-    ok: false,
-    reason: 'not_job_url',
-    hint: 'Open a LinkedIn Jobs page or Naukri job detail page first.',
-  };
+  return { ok: false, reason: 'not_job_url', hint: 'Open a LinkedIn Jobs page or Naukri job detail page first.' };
 })();

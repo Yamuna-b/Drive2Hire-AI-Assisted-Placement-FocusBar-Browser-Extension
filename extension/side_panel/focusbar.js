@@ -12,6 +12,119 @@ document.addEventListener('DOMContentLoaded', () => {
     return `<div class="skill-group"><strong>${label}</strong><div class="tags">${tags}</div></div>`;
   }
 
+  // ---------- Q&A Modal ----------
+  function createModal() {
+    const overlay = document.createElement('div');
+    overlay.id = 'qa-modal-overlay';
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100%';
+    overlay.style.height = '100%';
+    overlay.style.background = 'rgba(0,0,0,0.5)';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = '1000';
+
+    const modal = document.createElement('div');
+    modal.id = 'qa-modal';
+    modal.style.background = '#fff';
+    modal.style.padding = '1rem';
+    modal.style.borderRadius = '8px';
+    modal.style.maxWidth = '90%';
+    modal.style.maxHeight = '80%';
+    modal.style.overflowY = 'auto';
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    return { overlay, modal };
+  }
+
+  function showDurationModal(gapSkills) {
+    const { overlay, modal } = createModal();
+    const form = document.createElement('form');
+    form.id = 'qa-form';
+    modal.appendChild(document.createElement('h2')).innerText = 'Skill Experience Details';
+    gapSkills.forEach((skillObj, idx) => {
+      const container = document.createElement('div');
+      container.style.marginBottom = '1rem';
+      container.innerHTML = `
+        <strong>${skillObj.name} (required: ${skillObj.required_duration})</strong><br/>
+        <label>Do you have experience? 
+          <select name="hasExp_${idx}" required>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </label><br/>
+        <label>Duration: 
+          <select name="duration_${idx}" disabled>
+            <option value="">Select…</option>
+            <option value="<1 year"><1 year</option>
+            <option value="1-2 years">1-2 years</option>
+            <option value="2+ years">2+ years</option>
+          </select>
+        </label><br/>
+        <label>Project notes (optional):<br/>
+          <textarea name="notes_${idx}" rows="2" style="width:100%" disabled></textarea>
+        </label>
+      `;
+      form.appendChild(container);
+    });
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'submit';
+    submitBtn.textContent = 'Save & Re‑analyze';
+    submitBtn.style.marginTop = '1rem';
+    form.appendChild(submitBtn);
+    modal.appendChild(form);
+
+    // Enable/disable fields based on Yes/No selection
+    form.addEventListener('change', (e) => {
+      const target = e.target;
+      if (target.name && target.name.startsWith('hasExp_')) {
+        const idx = target.name.split('_')[1];
+        const durSelect = form.querySelector(`select[name="duration_${idx}"]`);
+        const notesArea = form.querySelector(`textarea[name="notes_${idx}"]`);
+        if (target.value === 'yes') {
+          durSelect.disabled = false;
+          notesArea.disabled = false;
+        } else {
+          durSelect.disabled = true;
+          notesArea.disabled = true;
+        }
+      }
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = new FormData(form);
+      const updates = [];
+      for (let i = 0; i < gapSkills.length; i++) {
+        const hasExp = data.get(`hasExp_${i}`);
+        if (hasExp === 'yes') {
+          const duration = data.get(`duration_${i}`) || null;
+          const notes = data.get(`notes_${i}`) || null;
+          updates.push({ name: gapSkills[i].name, duration, notes });
+        }
+      }
+      // Update chrome.storage.local userSkills
+      const stored = await chrome.storage.local.get('userSkills');
+      const current = stored.userSkills || [];
+      updates.forEach((u) => {
+        const idx = current.findIndex((s) => s.name.toLowerCase() === u.name.toLowerCase());
+        if (idx >= 0) {
+          if (u.duration) current[idx].duration_bucket = u.duration;
+          if (u.notes) current[idx].project_notes = u.notes;
+        } else {
+          current.push({ name: u.name, level: 'moderate', duration_bucket: u.duration, project_notes: u.notes });
+        }
+      });
+      await chrome.storage.local.set({ userSkills: current });
+      overlay.remove();
+      // Trigger re‑analysis to refresh UI
+      chrome.runtime.sendMessage({ type: 'analyseCurrentTab' }, () => {});
+    });
+  }
+
   function renderJobTab(analysis, error) {
     if (error) {
       content.innerHTML = `
@@ -33,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const match = analysis.match || { covered: [], weak: [], missing: [] };
+    const match = analysis.match || { covered: [], weak: [], missing: [], needs_duration: [] };
 
     content.innerHTML = `
       <div class="job-snapshot">
@@ -41,8 +154,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <p class="company">${analysis.company || 'Unknown company'}</p>
       </div>
 
-      ${skillList('Mandatory skills', analysis.mandatory_skills, 'mandatory')}
-      ${skillList('Nice-to-have skills', analysis.nice_to_have_skills, 'nice')}
+      ${skillList('Mandatory skills', analysis.mandatory_skills.map(s => s.name), 'mandatory')}
+      ${skillList('Nice-to-have skills', analysis.nice_to_have_skills.map(s => s.name), 'nice')}
 
       <div class="match-section">
         <strong>Your match</strong>
@@ -54,6 +167,10 @@ document.addEventListener('DOMContentLoaded', () => {
       <button id="btn-analyse" class="btn">Re-analyze current page</button>
     `;
     bindAnalyseButton();
+
+    if (match.needs_duration && match.needs_duration.length) {
+      showDurationModal(match.needs_duration);
+    }
   }
 
   function bindAnalyseButton() {
@@ -65,24 +182,21 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.textContent = 'Analyzing…';
 
       chrome.runtime.sendMessage({ type: 'analyseCurrentTab' }, (response) => {
-          btn.disabled = false;
-          btn.textContent = 'Re-analyze current page';
+        btn.disabled = false;
+        btn.textContent = 'Re-analyze current page';
 
-          if (chrome.runtime.lastError || !response?.ok) {
-            if (activeTab === 'Job') {
-              const msg =
-                response?.error ||
-                chrome.runtime.lastError?.message ||
-                'Analysis failed. Is the backend running?';
-              renderJobTab(null, msg);
-            }
-            return;
-          }
-
+        if (chrome.runtime.lastError || !response?.ok) {
           if (activeTab === 'Job') {
-            renderJobTab(response.analysis, null);
+            const msg = response?.error || chrome.runtime.lastError?.message || 'Analysis failed. Is the backend running?';
+            renderJobTab(null, msg);
           }
-        });
+          return;
+        }
+
+        if (activeTab === 'Job') {
+          renderJobTab(response.analysis, null);
+        }
+      });
     });
   }
 

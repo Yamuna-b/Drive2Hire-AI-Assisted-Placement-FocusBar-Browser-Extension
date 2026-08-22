@@ -96,11 +96,22 @@ async function resolveTargetTab(preferredTabId) {
 }
 
 async function extractFromTab(tabId) {
-  const [{ result }] = await chrome.scripting.executeScript({
+  // Ensure the parser script is injected (executeScript injects if not present)
+  await chrome.scripting.executeScript({
     target: { tabId },
-    files: ['content-scripts/extract-job-page.js'],
+    files: ['content-scripts/job-page-parser.js'],
   });
-  return result;
+  // Request the content script to extract job data via messaging
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { type: 'extractJob' }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Extraction message error:', chrome.runtime.lastError);
+        resolve({ ok: false, error: chrome.runtime.lastError.message });
+      } else {
+        resolve(response);
+      }
+    });
+  });
 }
 
 async function analyseTabId(tabId) {
@@ -125,6 +136,7 @@ async function analyseTabId(tabId) {
   let result;
   try {
     result = await extractFromTab(tab.id);
+    console.log('Extraction result from background:', result);
   } catch (err) {
     return {
       ok: false,
