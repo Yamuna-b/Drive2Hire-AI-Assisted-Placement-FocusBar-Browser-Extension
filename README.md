@@ -2,18 +2,34 @@
 
 Chrome side-panel extension + FastAPI backend that helps engineering students prepare for placements.
 
-## Phase 2 status (complete)
+## Phase 4 status (complete) — Universal Extraction
 
-- Job-page DOM parsing for LinkedIn and Naukri (extensible selector map)
+- **Generic DOM parsing** works on ANY job website (not just LinkedIn/Naukri)
+- Intelligently extracts job title, company, description from unknown websites
+- Extended skills database with 200+ domain-specific skills (Siemens eMeter, EnergyIP, MDMS, SAP, Oracle, etc.)
+- Dynamic skill extraction for domain-specific terms not in predefined database
+- Auto-detects job pages and extracts content automatically with MutationObserver
+
+## Phase 3 status (in progress) — Q&A Refinement
+
+- `POST /qa/generate-questions` endpoint generates Q&A for skills with duration gaps
+- Frontend "Refine Skills Q&A" button triggers dynamic questioning modal
+- Modal captures user experience duration and project notes for gap skills
+- Stores responses in chrome.storage.local for future reference
+
+## Phase 2 status (complete) — Multi-Site Support
+
+- Job-page DOM parsing for LinkedIn, Naukri, Indeed, Glassdoor, and any generic job site
 - `POST /job/analyse` — rule-based mandatory vs nice-to-have skill extraction
-- Job tab shows snapshot, skills, and covered / weak / missing match vs default user profile
+- Detects and extracts skills from complete job description text
+- Job tab shows snapshot, skills, and covered / weak / missing match vs user profile
 
 ## Phase 1 status (complete)
 
 - Manifest V3 extension with Job / Company / Coding tabs (text-first placeholder UI)
 - Side panel opens when you click the extension icon
-- FastAPI backend with `/health`, `/docs`, stub routers
-- PostgreSQL models stubbed (tables auto-created on startup when DB is reachable)
+- FastAPI backend with `/health`, `/docs`, all routers registered
+- PostgreSQL models available (tables auto-created on startup when DB is reachable)
 
 ## Project layout
 
@@ -90,20 +106,74 @@ The footer in the side panel shows backend connectivity.
 
 After code changes: click **Reload** on `chrome://extensions`, then reopen the side panel.
 
-## What's next — Phase 3
+## What's next — Phase 5
 
-Phase 3 adds Q&A skill refinement when JD mentions experience duration.
+Phase 5 will add company insights: tech stack, typical roles, salary bands, and company profile.
 
-### Test Phase 2
+### Test Phase 4 (Universal Extraction)
 
 1. Start backend: `.\scripts\start-backend.ps1`
 2. Reload extension at `chrome://extensions`
-3. Open a **LinkedIn** or **Naukri** job listing page
+3. Open ANY job listing page:
+   - LinkedIn Jobs (known site)
+   - Naukri (known site)
+   - Indeed (known site)
+   - Accenture careers page (generic site)
+   - **Any other job posting on the web**
 4. Click the extension icon → **Job** tab
-5. Click **Analyze current job page** (or wait for auto-extract on page load)
+5. Job data should auto-extract (or click "Analyze current job page")
 6. You should see job title, skills, and your match breakdown
+7. Click "Refine Skills Q&A" to answer questions about gap skills
 
-Default user skills are stored in extension local storage (editable in Phase 3+).
+### Testing Universal Extraction with Accenture Example
+
+For the Accenture Application Developer role, the extension should now:
+- Extract from Accenture's careers page (any website)
+- Identify "Siemens eMeter" as required skill (from expanded skills.json)
+- Extract other domain-specific terms like "EnergyIP MDMS", "Configuration MDMS"
+- Show accurate mandatory skills (not generic Java/Spring Boot)
+- Compare against your profile and show gaps
+- Allow Q&A refinement for experience with Siemens eMeter
+
+### Test Phase 3 (Q&A Refinement)
+
+1. Complete Phase 4 testing first
+2. On any analyzed job page, click the **Refine Skills Q&A** button
+3. A modal should appear with questions about skills that have experience gaps
+4. Answer questions about your experience duration and project notes
+5. Click "Save & Re‑analyze" to update your profile
+6. Your skill match should be recalculated based on responses
+
+**Example:** For Accenture job, if you don't have Siemens eMeter experience, 
+the Q&A will ask about your background and let you note if you're willing to learn it.
+
+## Skills Database
+
+The backend includes 200+ predefined skills across categories:
+- **Languages**: Python, Java, C++, Go, Rust, PHP, Scala, R, MATLAB
+- **Frameworks**: Spring Boot, FastAPI, Django, Flask, Express, Angular, React, Vue
+- **Databases**: SQL, MongoDB, Redis, PostgreSQL, Cassandra, HBase, Snowflake
+- **Enterprise**: SAP, Salesforce, Oracle, .NET, CICS, DB2, Teradata, Netezza
+- **Domain-Specific**: Siemens eMeter, EnergyIP, MDMS, AMI, Informatica, Talend
+- **Cloud**: AWS, Azure, GCP, Docker, Kubernetes, Terraform, CloudFormation
+- **DevOps**: CI/CD, Jenkins, GitLab, GitHub, SonarQube, Ansible, Chef
+- **Data**: Spark, Hadoop, Kafka, ETL, Tableau, Power BI, Looker
+- **AI/ML**: TensorFlow, PyTorch, scikit-learn, Pandas, NumPy, NLP, CV
+- **Security**: OAuth, JWT, SSL/TLS, Kerberos, LDAP, Active Directory
+- **Professional**: Agile, Scrum, Kanban, DevOps, SRE, TDD, Design Patterns
+
+Unknown skills found in the job description are automatically extracted as "domain-specific" skills.
+
+## Default User Skills
+
+Default user skills are stored in extension local storage (editable via Q&A refinement):
+- Python (strong, 2+ years)
+- JavaScript (moderate, 1 year)
+- SQL (moderate, 1 year)
+- Git (strong, 2+ years)
+- React (weak)
+- DSA (moderate)
+- REST (moderate)
 
 ## Docs
 
