@@ -1,0 +1,184 @@
+{
+  "companies": [
+    {
+      "name": "Accenture",
+      "aliases": ["accenture in india", "accenture india", "accenture plc", "accenture services"],
+      "type": "IT Services & Enterprise Consulting (Tier-1 MNC)",
+      "industry": "Information Technology, Cloud & Consulting",
+      "locations": ["Bhubaneswar", "Bangalore", "Hyderabad", "Pune", "Mumbai", "Chennai", "Kolkata", "Gurgaon", "Noida"],
+      "roles": ["Application Developer", "Associate Software Engineer (ASE)", "Advanced App Engineering Analyst (AAEA)", "Cloud Engineer", "Data Analyst"],
+      "tech_stack": ["Java", "Spring Boot", "Siemens eMeter", "SAP", "Salesforce", "Python", "AWS", "Azure", "SQL", "EnergyIP MDMS"],
+      "salary_bands": {
+        "entry_level": "₹4.5L - ₹6.5L / yr (ASE / App Dev)",
+        "mid_level": "₹8.5L - ₹15L / yr (AAEA / Analyst)",
+        "senior_level": "₹18L - ₹32L+ / yr (Team Lead / Consultant)"
+      },
+      "leadership": "Julie Sweet (Chair & Global CEO), Arundhati Chakraborty (India MD)"
+    },
+    {
+      "name": "Google",
+      "aliases": ["google llc", "alphabet", "google india"],
+      "type": "Product (FAANG / Big Tech)",
+      "industry": "Internet, Cloud, AI & Software",
+      "locations": ["Bangalore", "Hyderabad", "Mountain View", "New York", "Remote"],
+      "roles": ["Software Engineer (SWE)", "Site Reliability Engineer", "Data Scientist", "Product Manager"],
+      "tech_stack": ["C++", "Java", "Python", "Go", "Kubernetes", "TensorFlow", "GCP"],
+      "salary_bands": {
+        "entry_level": "₹25L - ₹40L / yr",
+        "mid_level": "₹45L - ₹75L / yr",
+        "senior_level": "₹80L - ₹1.5Cr+ / yr"
+      },
+      "leadership": "Sundar Pichai (CEO)"
+    },
+    {
+      "name": "Microsoft",
+      "aliases": ["microsoft corporation", "msft", "microsoft india"],
+      "type": "Product (Big Tech)",
+      "industry": "Software, Cloud & Hardware",
+      "locations": ["Hyderabad", "Bangalore", "Noida", "Redmond"],
+      "roles": ["Software Engineer (SDE)", "Cloud Solution Architect", "Data Engineer"],
+      "tech_stack": ["C#", ".NET", "Azure", "TypeScript", "Python", "C++", "SQL Server"],
+      "salary_bands": {
+        "entry_level": "₹20L - ₹35L / yr",
+        "mid_level": "₹38L - ₹65L / yr",
+        "senior_level": "₹70L - ₹1.2Cr+ / yr"
+      },
+      "leadership": "Satya Nadella (CEO)"
+    },
+    {
+      "name": "Amazon",
+      "aliases": ["amazon web services", "aws", "amazon.com", "amazon india"],
+      "type": "Product (Big Tech / E-commerce)",
+      "industry": "E-Commerce, Cloud & AI",
+      "locations": ["Bangalore", "Hyderabad", "Chennai", "Seattle"],
+      "roles": ["Software Development Engineer (SDE I/II/III)", "DevOps Engineer"],
+      "tech_stack": ["Java", "AWS", "Python", "C++", "React", "DynamoDB"],
+      "salary_bands": {
+        "entry_level": "₹22L - ₹38L / yr",
+        "mid_level": "₹42L - ₹70L / yr",
+        "senior_level": "₹75L - ₹1.4Cr+ / yr"
+      },
+      "leadership": "Andy Jassy (CEO)"
+    },
+    {
+      "name": "TCS",
+      "aliases": ["tata consultancy services", "tata consultancy"],
+      "type": "IT Services & Consulting (Tier-1 Indian MNC)",
+      "industry": "IT Services & Business Solutions",
+      "locations": ["Mumbai", "Chennai", "Bangalore", "Pune", "Hyderabad", "Kolkata", "Bhubaneswar"],
+      "roles": ["Ninja Developer", "Digital Developer", "Innovator SDE", "Systems Engineer"],
+      "tech_stack": ["Java", "Spring Boot", "SQL", "Angular", "Python", "Cloud"],
+      "salary_bands": {
+        "entry_level": "₹3.6L - ₹7.5L / yr",
+        "mid_level": "₹9L - ₹16L / yr",
+        "senior_level": "₹18L - ₹30L / yr"
+      },
+      "leadership": "K. Krithivasan (CEO)"
+    },
+    {
+      "name": "Infosys",
+      "aliases": ["infosys limited", "infy"],
+      "type": "IT Services & Enterprise Consulting",
+      "industry": "IT Services & Digital Transformation",
+      "locations": ["Bangalore", "Mysore", "Pune", "Hyderabad", "Chennai", "Bhubaneswar"],
+      "roles": ["Systems Engineer", "Specialist Programmer (SP)", "Digital Specialist Engineer (DSE)"],
+      "tech_stack": ["Java", "Python", "React", "Node.js", "Azure", "AWS"],
+      "salary_bands": {
+        "entry_level": "₹3.6L - ₹9.5L / yr",
+        "mid_level": "₹10L - ₹18L / yr",
+        "senior_level": "₹20L - ₹32L / yr"
+      },
+      "leadership": "Salil Parekh (CEO)"
+    },
+    {
+      "name": "Capgemini",
+      "aliases": ["capgemini india", "capgemini technology services"],
+      "type": "IT Services & Consulting",
+      "industry": "Consulting, Digital Transformation & Engineering",
+      "locations": ["Bangalore", "Mumbai", "Pune", "Hyderabad", "Chennai", "Kolkata"],
+      "roles": ["Software Analyst", "Senior Software Engineer", "Full Stack Developer"],
+      "tech_stack": ["Java", "Spring Boot", "React", "Cloud", "Python", "SQL"],
+      "salary_bands": {
+        "entry_level": "₹4.0L - ₹7.5L / yr",
+        "mid_level": "₹8.5L - ₹15L / yr",
+        "senior_level": "₹18L - ₹30L / yr"
+      },
+      "leadership": "Aiman Ezzat (Global CEO)"
+    },
+    {
+      "name": "Cognizant",
+      "aliases": ["cognizant technology solutions", "cts"],
+      "type": "IT Services & Digital Solutions",
+      "industry": "Information Technology & Healthcare Tech",
+      "locations": ["Chennai", "Bangalore", "Hyderabad", "Pune", "Kolkata", "Coimbatore"],
+      "roles": ["GenC Programmer", "GenC Next Developer", "Senior Associate"],
+      "tech_stack": ["Java", "Full Stack", "Python", "AWS", "Salesforce", "React"],
+      "salary_bands": {
+        "entry_level": "₹4.0L - ₹8.0L / yr",
+        "mid_level": "₹8.0L - ₹15L / yr",
+        "senior_level": "₹18L - ₹28L / yr"
+      },
+      "leadership": "Ravi Kumar S (CEO)"
+    },
+    {
+      "name": "Flipkart",
+      "aliases": ["flipkart internet"],
+      "type": "Product (E-commerce Leader)",
+      "industry": "E-Commerce & Supply Chain Tech",
+      "locations": ["Bangalore"],
+      "roles": ["SDE I", "SDE II", "Data Engineer", "Frontend Engineer"],
+      "tech_stack": ["Java", "Python", "React", "Kafka", "MySQL", "HBase"],
+      "salary_bands": {
+        "entry_level": "₹18L - ₹28L / yr",
+        "mid_level": "₹30L - ₹50L / yr",
+        "senior_level": "₹55L - ₹90L+ / yr"
+      },
+      "leadership": "Kalyan Krishnamurthy (CEO)"
+    },
+    {
+      "name": "Swiggy",
+      "aliases": ["bundl technologies"],
+      "type": "Product (Unicorn / FoodTech)",
+      "industry": "Quick Commerce & Logistics Tech",
+      "locations": ["Bangalore", "Remote"],
+      "roles": ["Software Engineer", "Backend Engineer", "ML Engineer"],
+      "tech_stack": ["Go", "Java", "Python", "React Native", "Kafka", "AWS"],
+      "salary_bands": {
+        "entry_level": "₹16L - ₹26L / yr",
+        "mid_level": "₹28L - ₹48L / yr",
+        "senior_level": "₹50L - ₹85L / yr"
+      },
+      "leadership": "Sriharsha Majety (CEO)"
+    },
+    {
+      "name": "Zomato",
+      "aliases": ["zomato limited", "blinkit"],
+      "type": "Product (FoodTech & Quick Commerce)",
+      "industry": "Food Delivery & Logistics",
+      "locations": ["Gurgaon", "Bangalore"],
+      "roles": ["Software Development Engineer", "Product Engineer"],
+      "tech_stack": ["PHP", "Go", "Python", "React", "AWS", "Redis"],
+      "salary_bands": {
+        "entry_level": "₹15L - ₹25L / yr",
+        "mid_level": "₹28L - ₹45L / yr",
+        "senior_level": "₹50L - ₹80L / yr"
+      },
+      "leadership": "Deepinder Goyal (CEO)"
+    },
+    {
+      "name": "Razorpay",
+      "aliases": ["razorpay software"],
+      "type": "Product (Fintech Unicorn)",
+      "industry": "Payments & Financial Technology",
+      "locations": ["Bangalore"],
+      "roles": ["Software Engineer", "Security Engineer", "DevOps"],
+      "tech_stack": ["Go", "PHP", "Node.js", "React", "Kafka", "AWS", "Kubernetes"],
+      "salary_bands": {
+        "entry_level": "₹18L - ₹28L / yr",
+        "mid_level": "₹30L - ₹52L / yr",
+        "senior_level": "₹55L - ₹90L / yr"
+      },
+      "leadership": "Harshil Mathur (CEO)"
+    }
+  ]
+}
