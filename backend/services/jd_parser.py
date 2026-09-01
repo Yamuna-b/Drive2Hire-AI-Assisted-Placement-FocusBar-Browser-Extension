@@ -110,6 +110,54 @@ def _find_skills_in_text(text: str, skills_config: list) -> list:
     return found
 
 
+def _extract_unknown_skills(text: str) -> list:
+    """Extract potential skill names that aren't in our database.
+    Looks for capitalized words/phrases that appear technical."""
+    if not text:
+        return []
+    
+    # Remove common non-skill words
+    common_words = {
+        'the', 'and', 'or', 'is', 'are', 'be', 'to', 'for', 'in', 'of', 'on', 'at',
+        'by', 'from', 'with', 'as', 'a', 'an', 'that', 'this', 'it', 'if', 'we',
+        'you', 'your', 'our', 'their', 'other', 'any', 'all', 'these', 'those',
+        'year', 'years', 'experience', 'knowledge', 'understanding', 'skills',
+        'must', 'should', 'could', 'can', 'may', 'will', 'would', 'have', 'has',
+        'do', 'does', 'job', 'role', 'position', 'requirement', 'requirements',
+        'qualifications', 'qualification', 'responsibility', 'responsibilities',
+        'day', 'days', 'month', 'months', 'week', 'weeks', 'able', 'willing',
+        'people', 'person', 'company', 'team', 'project', 'work', 'working',
+        'working', 'develop', 'development', 'technical', 'technology', 'software'
+    }
+    
+    # Extract capitalized sequences and hyphenated terms
+    patterns = [
+        r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b',  # Capitalized phrases
+        r'\b([A-Z]+(?:[+\-][A-Z]+)*)\b',  # Acronyms like C++, C#
+        r'\b([a-z]+(?:\+\+|#|\.js|\.py)?)\b',  # Language/framework names
+    ]
+    
+    found = set()
+    text_lower = text.lower()
+    
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            term = match.group(1).strip()
+            term_lower = term.lower()
+            
+            # Skip if it's a common word or too short
+            if term_lower in common_words or len(term) < 2:
+                continue
+            
+            # Skip if already in our known skills
+            if term_lower in text_lower and term not in found:
+                found.add(term)
+    
+    # Filter out very common words that slipped through
+    filtered = [term for term in found if term.lower() not in common_words]
+    return sorted(list(filtered))[:15]  # Return top 15 extracted skills
+
+
 def parse_jd(jd_text: str) -> dict:
     """Extract mandatory and nice‑to‑have skills from a job description, preserving any detected duration constraints."""
     skills_config = _load_skills_config()
@@ -143,6 +191,33 @@ def parse_jd(jd_text: str) -> dict:
     if not mandatory and not nice_to_have and jd_text:
         all_skills = _find_skills_in_text(jd_text, skills_config)
         mandatory_objs = [{"name": n, "duration": None} for n in all_skills]
+    
+    # Extract unknown domain-specific skills
+    # First try mandatory section, then fallback to whole JD
+    unknown_mandatory = _extract_unknown_skills(sections["mandatory"] or sections["other"] or jd_text)
+    unknown_nice = _extract_unknown_skills(sections["nice_to_have"] or "")
+    
+    # Add unknown skills as "Other Skills" (mark as domain-specific)
+    # Filter out any that match known skills
+    known_skill_names = {s["name"].lower() for s in mandatory_objs} | {s["name"].lower() for s in nice_objs}
+    
+    for skill in unknown_mandatory:
+        if skill.lower() not in known_skill_names:
+            mandatory_objs.append({
+                "name": skill,
+                "duration": None,
+                "is_domain_specific": True,
+                "source": "auto_extracted"
+            })
+            
+    for skill in unknown_nice:
+        if skill.lower() not in known_skill_names:
+            nice_objs.append({
+                "name": skill,
+                "duration": None,
+                "is_domain_specific": True,
+                "source": "auto_extracted"
+            })
 
     return {
         "mandatory_skills": mandatory_objs,

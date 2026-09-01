@@ -130,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
       content.innerHTML = `
         <p class="error">${error}</p>
         <button id="btn-analyse" class="btn">Analyze current job page</button>
-        <p class="muted">Open a LinkedIn or Naukri job listing first.</p>
+        <p class="muted">Open any job listing page (LinkedIn, Naukri, Indeed, Glassdoor, or any website) and click above.</p>
       `;
       bindAnalyseButton();
       return;
@@ -140,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
       content.innerHTML = `
         <p>No job analyzed yet.</p>
         <button id="btn-analyse" class="btn">Analyze current job page</button>
-        <p class="muted">Visit a LinkedIn or Naukri job page, then click above.</p>
+        <p class="muted">Visit any job posting page, then click above.</p>
       `;
       bindAnalyseButton();
       return;
@@ -165,12 +165,49 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
 
       <button id="btn-analyse" class="btn">Re-analyze current page</button>
+      <button id="btn-qa" class="btn" style="margin-top: 0.5rem; background: #6366f1;">Refine Skills Q&A</button>
     `;
     bindAnalyseButton();
+    
+    // Bind Q&A button
+    const qaBtn = document.getElementById('btn-qa');
+    if (qaBtn) {
+      qaBtn.addEventListener('click', () => {
+        triggerQASession(analysis);
+      });
+    }
 
     if (match.needs_duration && match.needs_duration.length) {
       showDurationModal(match.needs_duration);
     }
+  }
+
+  function triggerQASession(analysis) {
+    chrome.storage.local.get('userSkills', (data) => {
+      const userSkills = data.userSkills || [];
+      
+      // Call backend to generate Q&A questions
+      fetch('http://127.0.0.1:8000/qa/generate-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mandatory_skills: analysis.mandatory_skills,
+          nice_to_have_skills: analysis.nice_to_have_skills,
+          user_skills: userSkills
+        })
+      })
+      .then(res => res.json())
+      .then(qaData => {
+        if (qaData.gap_skills && qaData.gap_skills.length > 0) {
+          showDurationModal(qaData.gap_skills);
+        } else {
+          alert('No skills need refinement! You\'re well-matched for this role.');
+        }
+      })
+      .catch(err => {
+        alert('Q&A service error: ' + err.message);
+      });
+    });
   }
 
   function bindAnalyseButton() {

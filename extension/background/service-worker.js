@@ -59,7 +59,31 @@ async function handleJobData(payload) {
 
 function isJobPageUrl(url) {
   if (!url) return false;
-  return /linkedin\.com\/jobs/.test(url) || /naukri\.com\/(job-listings|job-detail)/.test(url);
+  // Check for known job boards first
+  const knownBoards = [
+    /linkedin\.com\/jobs/,
+    /naukri\.com\/(job-listings|job-detail)/,
+    /indeed\.com/,
+    /glassdoor\.(com|co|in)/,
+    /monster\.com/,
+    /dice\.com/,
+    /ziprecruiter\.com/,
+    /hired\.com/,
+    /builtin\.com/,
+    /toptal\.com/,
+    /github\.com\/.*\/jobs/,
+    /stackoverflow\.com\/jobs/,
+    /wellfound\.com/,
+    /angel\.co/,
+  ];
+  
+  if (knownBoards.some(pattern => pattern.test(url))) {
+    return true;
+  }
+  
+  // Fallback: if URL looks like it contains job-related keywords, treat as potentially valid
+  const jobKeywords = ['job', 'career', 'hire', 'position', 'role', 'vacancy', 'opening', 'recruit', 'apply'];
+  return jobKeywords.some(kw => url.toLowerCase().includes(kw));
 }
 
 async function resolveTargetTab(preferredTabId) {
@@ -96,10 +120,10 @@ async function resolveTargetTab(preferredTabId) {
 }
 
 async function extractFromTab(tabId) {
-  // Ensure the parser script is injected (executeScript injects if not present)
+  // Ensure the parser scripts are injected
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: ['content-scripts/job-page-parser.js'],
+    files: ['content-scripts/universal-parser.js', 'content-scripts/job-page-parser.js'],
   });
   // Request the content script to extract job data via messaging
   return new Promise((resolve) => {
@@ -129,7 +153,7 @@ async function analyseTabId(tabId) {
   if (!isJobPageUrl(tab.url)) {
     return {
       ok: false,
-      error: `Not a job page (got: ${tab.url || 'unknown'}). Open LinkedIn Jobs or Naukri job detail, then click Analyze.`,
+      error: `Not a job page (got: ${tab.url || 'unknown'}). Open any job listing page (LinkedIn, Naukri, Indeed, etc.), then click Analyze.`,
     };
   }
 
@@ -140,7 +164,7 @@ async function analyseTabId(tabId) {
   } catch (err) {
     return {
       ok: false,
-      error: `Could not read page — refresh the LinkedIn tab (F5), then retry. (${err.message})`,
+      error: `Could not read page — refresh the page (F5), then retry. (${err.message})`,
     };
   }
 

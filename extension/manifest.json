@@ -21,15 +21,13 @@
   "host_permissions": [
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*",
-    "https://www.linkedin.com/*",
-    "https://linkedin.com/*",
-    "https://www.naukri.com/*",
-    "https://naukri.com/*"
+    "https://*/*",
+    "http://*/*"
   ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content-scripts/job-page-parser.js", "content-scripts/coding-page-parser.js"],
+      "js": ["content-scripts/universal-parser.js", "content-scripts/job-page-parser.js", "content-scripts/coding-page-parser.js"],
       "run_at": "document_idle"
     }
   ]
