@@ -1,6 +1,14 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
+from datetime import datetime
+
+from backend.db.database import get_db
+from backend.models.user import User
+from backend.models.user_skill import UserSkill
+from backend.models.skill import Skill
+from backend.models.qa_response import QAResponse
 
 router = APIRouter()
 
@@ -18,6 +26,8 @@ class UserSkillResponse(BaseModel):
     has_experience: bool
     duration_bucket: str | None = None  # "<1 year", "1-2 years", "2+ years"
     project_notes: str | None = None
+    job_title: str | None = None
+    job_company: str | None = None
 
 
 class QASessionRequest(BaseModel):
@@ -25,6 +35,13 @@ class QASessionRequest(BaseModel):
     mandatory_skills: List[dict]
     nice_to_have_skills: List[dict]
     user_skills: List[dict]
+    user_id: Optional[int] = None  # For authenticated users
+
+
+class BulkSkillUpdateRequest(BaseModel):
+    """Bulk update multiple skills from Q&A session."""
+    user_id: int
+    skills: List[UserSkillResponse]
 
 
 def generate_qa_questions(skill_name: str, required_duration: str) -> List[str]:
@@ -111,16 +128,193 @@ async def generate_qa_session(request: QASessionRequest):
 
 
 @router.post("/save-responses")
-async def save_qa_responses(responses: List[UserSkillResponse]):
-    """Save user's Q&A responses for future reference.
+async def save_qa_responses(responses: List[UserSkillResponse], db: Session = Depends(get_db)):
+    """Save user's Q&A responses to database and update user skills."""
     
-    In Phase 4+, these can be persisted to database.
-    For now, they're handled client-side via chrome.storage.local
-    """
+    if not responses:
+        return {"ok": True, "message": "No responses to save", "responses_count": 0}
+    
+    try:
+        # Get or create user (for now, use user_id=1 as default)
+        user_id = 1
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            user = User(id=user_id, name="Default User", email="user@example.com")
+            db.add(user)
+            db.commit()
+        
+        saved_responses = []
+        
+        for response in responses:
+            # Save QA response
+            qa_record = QAResponse(
+                user_id=user_id,
+                skill_name=response.skill_name,
+                has_experience=response.has_experience,
+                duration_bucket=response.duration_bucket if response.has_experience else None,
+                project_notes=response.project_notes,
+                job_title=response.job_title,
+                job_company=response.job_company,
+            )
+            db.add(qa_record)
+            
+            # If user has experience, update/create UserSkill
+            if response.has_experience:
+                # Find or create skill
+                skill = db.query(Skill).filter(
+                    Skill.name.ilike(response.skill_name)
+                ).first()
+                
+                if not skill:
+                    skill = Skill(name=response.skill_name)
+                    db.add(skill)
+                    db.flush()
+                
+                # Find or create user_skill
+                user_skill = db.query(UserSkill).filter(
+                    UserSkill.user_id == user_id,
+                    UserSkill.skill_id == skill.id
+                ).first()
+                
+                if not user_skill:
+                    user_skill = UserSkill(
+                        user_id=user_id,
+                        skill_id=skill.id,
+                        duration_bucket=response.duration_bucket,
+                        project_notes=response.project_notes,
+                    )
+                    db.add(user_skill)
+                else:
+                    # Update existing
+                    user_skill.duration_bucket = response.duration_bucket
+                    user_skill.project_notes = response.project_notes
+            
+            saved_responses.append(response.dict())
+        
+        db.commit()
+        
+        return {
+            "ok": True,
+            "message": f"Saved responses for {len(responses)} skills",
+            "responses_count": len(responses),
+            "saved_responses": saved_responses
+        }
+    
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bulk-update-skills")
+async def bulk_update_skills(request: BulkSkillUpdateRequest, db: Session = Depends(get_db)):
+    """Bulk update user skills from Q&A session with database persistence."""
+    
+    user_id = request.user_id
+    skills = request.skills
+    
+    if not skills:
+        return {"ok": True, "message": "No skills to update"}
+    
+    try:
+        updated_count = 0
+        
+        for skill_response in skills:
+            if not skill_response.has_experience:
+                continue
+            
+            # Find or create skill
+            skill = db.query(Skill).filter(
+                Skill.name.ilike(skill_response.skill_name)
+            ).first()
+            
+            if not skill:
+                skill = Skill(name=skill_response.skill_name)
+                db.add(skill)
+                db.flush()
+            
+            # Find or create user_skill
+            user_skill = db.query(UserSkill).filter(
+                UserSkill.user_id == user_id,
+                UserSkill.skill_id == skill.id
+            ).first()
+            
+            if not user_skill:
+                user_skill = UserSkill(
+                    user_id=user_id,
+                    skill_id=skill.id,
+                    duration_bucket=skill_response.duration_bucket,
+                    project_notes=skill_response.project_notes,
+                )
+                db.add(user_skill)
+            else:
+                user_skill.duration_bucket = skill_response.duration_bucket
+                user_skill.project_notes = skill_response.project_notes
+            
+            # Save QA response
+            qa_record = QAResponse(
+                user_id=user_id,
+                user_skill_id=user_skill.id,
+                skill_name=skill_response.skill_name,
+                has_experience=True,
+                duration_bucket=skill_response.duration_bucket,
+                project_notes=skill_response.project_notes,
+                job_title=skill_response.job_title,
+                job_company=skill_response.job_company,
+            )
+            db.add(qa_record)
+            updated_count += 1
+        
+        db.commit()
+        
+        return {
+            "ok": True,
+            "message": f"Updated {updated_count} skills",
+            "updated_count": updated_count
+        }
+    
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/user/{user_id}/responses")
+async def get_user_responses(user_id: int, db: Session = Depends(get_db)):
+    """Get all Q&A responses for a user."""
+    
+    responses = db.query(QAResponse).filter(QAResponse.user_id == user_id).all()
     
     return {
-        "ok": True,
-        "message": f"Saved responses for {len(responses)} skills",
-        "responses_count": len(responses)
+        "user_id": user_id,
+        "total_responses": len(responses),
+        "responses": [r.to_dict() for r in responses]
+    }
+
+
+@router.get("/user/{user_id}/skills")
+async def get_user_skills(user_id: int, db: Session = Depends(get_db)):
+    """Get all user skills with Q&A history."""
+    
+    user_skills = db.query(UserSkill).filter(UserSkill.user_id == user_id).all()
+    
+    skills_data = []
+    for us in user_skills:
+        skill_name = us.skill.name if us.skill else "Unknown"
+        qa_history = db.query(QAResponse).filter(
+            QAResponse.user_skill_id == us.id
+        ).order_by(QAResponse.answered_at.desc()).all()
+        
+        skills_data.append({
+            "skill_id": us.id,
+            "skill_name": skill_name,
+            "duration_bucket": us.duration_bucket,
+            "project_notes": us.project_notes,
+            "qa_history_count": len(qa_history),
+            "last_qa_date": qa_history[0].answered_at if qa_history else None
+        })
+    
+    return {
+        "user_id": user_id,
+        "total_skills": len(skills_data),
+        "skills": skills_data
     }
 

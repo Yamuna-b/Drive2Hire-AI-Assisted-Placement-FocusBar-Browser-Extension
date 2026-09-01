@@ -7,6 +7,8 @@ from backend.models.company import Company
 from backend.models.coding_session import CodingSession
 from backend.models.coding_account_sync import CodingAccountSync
 from backend.models.job_outcome import JobOutcome
+from backend.models.qa_response import QAResponse
+from backend.models.application import Application
 
 __all__ = [
     "User",
@@ -18,4 +20,6 @@ __all__ = [
     "CodingSession",
     "CodingAccountSync",
     "JobOutcome",
+    "QAResponse",
+    "Application",
 ]
