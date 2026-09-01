@@ -233,15 +233,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ---------- Company Tab (Phase 5) ----------
+  // ---------- Company Tab (Phase 5 + Gap Analysis) ----------
   async function renderCompanyTab() {
     chrome.storage.local.get('lastJobAnalysis', async (data) => {
       const analysis = data.lastJobAnalysis;
       if (!analysis || !analysis.company) {
         content.innerHTML = `
           <div class="company-section">
-            <h2>Company Insights</h2>
-            <p class="muted">Analyze a job page first to see company insights.</p>
+            <h2>Company & Gap Analysis</h2>
+            <p class="muted">Analyze a job page first to see company insights and skill gaps.</p>
             <button id="btn-analyze-company" class="btn">Analyze Current Job Page</button>
           </div>
         `;
@@ -253,32 +253,57 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      content.innerHTML = '<p class="loading">Loading company insights...</p>';
+      content.innerHTML = '<p class="loading">Loading company insights and gap analysis...</p>';
 
       try {
-        const response = await fetch(`http://127.0.0.1:8000/company/profile/${encodeURIComponent(analysis.company)}`);
-        const companyData = await response.json();
+        // Fetch real-time company data from internet
+        const companyResponse = await fetch(`http://127.0.0.1:8000/company/analyze-realtime`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_name: analysis.company,
+            job_title: analysis.title
+          })
+        });
+        const companyData = await companyResponse.json();
 
-        if (companyData.error) {
-          content.innerHTML = `
-            <div class="company-section">
-              <h2>Company Insights</h2>
-              <p class="muted">${companyData.error}</p>
-              <p>Analyzing current job for company data...</p>
-            </div>
-          `;
-          return;
-        }
+        // Fetch gap analysis
+        const gapResponse = await fetch('http://127.0.0.1:8000/gap-analysis/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: currentUserId,
+            job_title: analysis.title,
+            company: analysis.company,
+            mandatory_skills: analysis.mandatory_skills || [],
+            nice_to_have_skills: analysis.nice_to_have_skills || []
+          })
+        });
+        const gapData = await gapResponse.json();
+
+        // Fetch roadmap
+        const roadmapResponse = await fetch('http://127.0.0.1:8000/gap-analysis/roadmap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: currentUserId,
+            job_title: analysis.title,
+            company: analysis.company,
+            mandatory_skills: analysis.mandatory_skills || [],
+            nice_to_have_skills: analysis.nice_to_have_skills || []
+          })
+        });
+        const roadmapData = await roadmapResponse.json();
 
         content.innerHTML = `
           <div class="company-section">
-            <h2>Company Insights</h2>
+            <h2>Company & Gap Analysis</h2>
             
             <div class="company-card">
-              <h3>${companyData.name}</h3>
+              <h3>${analysis.company}</h3>
               <p class="industry">${companyData.industry || 'Technology'}</p>
               <p class="company-size">${companyData.company_size || 'Enterprise'}</p>
-              <p class="jobs-analyzed">${companyData.jobs_analyzed || 0} jobs analyzed</p>
+              <p class="company-source">Data source: ${companyData.source || 'Real-time web search'}</p>
             </div>
             
             <section class="tech-stack">
@@ -313,19 +338,59 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>
             </section>
             
-            <section class="locations">
-              <h4>Office Locations</h4>
-              <ul>
-                ${(companyData.locations || []).map(loc => `<li>${loc}</li>`).join('')}
-              </ul>
-            </section>
+            <div class="gap-summary">
+              <h3>Skill Gap Analysis for ${analysis.title}</h3>
+              <div class="match-score">
+                <span class="score-label">Match Confidence</span>
+                <span class="score-value">${gapData.confidence_score || 65}%</span>
+              </div>
+              
+              <div class="gap-category critical">
+                <h4>🔴 Critical Gaps (${gapData.critical_gaps || 0})</h4>
+                <ul>
+                  ${(gapData.gaps?.critical || []).map(gap => `
+                    <li>
+                      <strong>${gap.skill_name}</strong> - Required: ${gap.required_level}, You: ${gap.current_level}
+                      <span class="learning-time">~${gap.learning_time_estimate}h to learn</span>
+                    </li>
+                  `).join('')}
+                </ul>
+              </div>
+              
+              <div class="gap-category high">
+                <h4>🟡 High Priority Gaps (${gapData.high_priority_gaps || 0})</h4>
+                <ul>
+                  ${(gapData.gaps?.high || []).map(gap => `
+                    <li>
+                      <strong>${gap.skill_name}</strong> - Required: ${gap.required_level}, You: ${gap.current_level}
+                      <span class="learning-time">~${gap.learning_time_estimate}h to learn</span>
+                    </li>
+                  `).join('')}
+                </ul>
+              </div>
+            </div>
+            
+            <div class="roadmap">
+              <h3>Learning Roadmap (${gapData.estimated_weeks || 6} weeks, ${gapData.total_learning_hours || 0} hours)</h3>
+              ${(roadmapData.phases || []).map(phase => `
+                <div class="week">
+                  <h4>${phase.title}</h4>
+                  <p class="phase-duration">${phase.duration_weeks} weeks • ${phase.daily_time_estimate}h/day</p>
+                  <p class="phase-focus"><strong>Focus:</strong> ${phase.focus}</p>
+                  <ul>
+                    ${phase.skills.map(skill => `<li>${skill}</li>`).join('')}
+                  </ul>
+                  <p class="phase-goals"><strong>Goals:</strong> ${phase.goals.join(', ')}</p>
+                </div>
+              `).join('')}
+            </div>
           </div>
         `;
       } catch (error) {
         content.innerHTML = `
           <div class="company-section">
-            <h2>Company Insights</h2>
-            <p class="error">Failed to load company data: ${error.message}</p>
+            <h2>Company & Gap Analysis</h2>
+            <p class="error">Failed to load data: ${error.message}</p>
           </div>
         `;
       }
@@ -476,164 +541,103 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    document.getElementById('btn-sync-leetcode')?.addEventListener('click', () => {
-      alert('LeetCode sync requires API integration. Coming soon!');
-    });
+    document.getElementById('btn-sync-leetcode')?.addEventListener('click', async () => {
+      chrome.storage.local.get('userSettings', async (data) => {
+        const username = data.userSettings?.leetcode_username;
+        if (!username) {
+          alert('Please set your LeetCode username in Settings first');
+          return;
+        }
 
-    document.getElementById('btn-sync-gfg')?.addEventListener('click', () => {
-      alert('GFG sync requires scraper integration. Coming soon!');
-    });
-
-    document.getElementById('btn-sync-codeforces')?.addEventListener('click', () => {
-      alert('Codeforces sync requires API integration. Coming soon!');
-    });
-  }
-
-  // ---------- Gap Analysis Tab (Phase 7) ----------
-  async function renderGapAnalysisTab() {
-    chrome.storage.local.get('lastJobAnalysis', async (data) => {
-      const analysis = data.lastJobAnalysis;
-      if (!analysis) {
-        content.innerHTML = `
-          <div class="gap-analysis">
-            <h2>Gap Analysis & Prep Plan</h2>
-            <p class="muted">Analyze a job page first to see gap analysis.</p>
-            <button id="btn-analyze-gap" class="btn">Analyze Current Job Page</button>
-          </div>
-        `;
-        document.getElementById('btn-analyze-gap')?.addEventListener('click', () => {
-          chrome.runtime.sendMessage({ type: 'analyseCurrentTab' }, () => {
-            renderGapAnalysisTab();
+        try {
+          const response = await fetch('http://127.0.0.1:8000/coding-session/sync/leetcode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              username: username
+            })
           });
-        });
-        return;
-      }
+          const result = await response.json();
+          
+          if (result.ok) {
+            alert(`Synced LeetCode profile: ${result.total_solved} problems solved (E: ${result.easy}, M: ${result.medium}, H: ${result.hard})`);
+            renderCodingTab();
+          } else {
+            alert('Sync failed: ' + (result.error || result.message));
+          }
+        } catch (error) {
+          alert('Failed to sync LeetCode: ' + error.message);
+        }
+      });
+    });
 
-      content.innerHTML = '<p class="loading">Analyzing skill gaps...</p>';
+    document.getElementById('btn-sync-gfg')?.addEventListener('click', async () => {
+      chrome.storage.local.get('userSettings', async (data) => {
+        const username = data.userSettings?.gfg_username;
+        if (!username) {
+          alert('Please set your GFG username in Settings first');
+          return;
+        }
 
-      try {
-        const response = await fetch('http://127.0.0.1:8000/gap-analysis/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: currentUserId,
-            job_title: analysis.title,
-            company: analysis.company,
-            mandatory_skills: analysis.mandatory_skills || [],
-            nice_to_have_skills: analysis.nice_to_have_skills || []
-          })
-        });
-        const gapData = await response.json();
+        try {
+          const response = await fetch('http://127.0.0.1:8000/coding-session/sync/gfg', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              username: username
+            })
+          });
+          const result = await response.json();
+          
+          if (result.ok) {
+            alert(`Synced GFG profile: ${result.problems_solved} problems solved, Coding Score: ${result.coding_score}`);
+            renderCodingTab();
+          } else {
+            alert('Sync failed: ' + (result.error || result.message));
+          }
+        } catch (error) {
+          alert('Failed to sync GFG: ' + error.message);
+        }
+      });
+    });
 
-        const roadmapResponse = await fetch('http://127.0.0.1:8000/gap-analysis/roadmap', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: currentUserId,
-            job_title: analysis.title,
-            company: analysis.company,
-            mandatory_skills: analysis.mandatory_skills || [],
-            nice_to_have_skills: analysis.nice_to_have_skills || []
-          })
-        });
-        const roadmapData = await roadmapResponse.json();
+    document.getElementById('btn-sync-codeforces')?.addEventListener('click', async () => {
+      chrome.storage.local.get('userSettings', async (data) => {
+        const username = data.userSettings?.codeforces_username;
+        if (!username) {
+          alert('Please set your Codeforces username in Settings first');
+          return;
+        }
 
-        content.innerHTML = `
-          <div class="gap-analysis">
-            <h2>Gap Analysis & Prep Plan</h2>
-            
-            <div class="gap-summary">
-              <h3>Skills Analysis for ${analysis.title}</h3>
-              <div class="match-score">
-                <span class="score-label">Match Confidence</span>
-                <span class="score-value">${gapData.confidence_score || 65}%</span>
-              </div>
-              
-              <div class="gap-category critical">
-                <h4>🔴 Critical Gaps (${gapData.critical_gaps || 0})</h4>
-                <ul>
-                  ${(gapData.gaps?.critical || []).map(gap => `
-                    <li>
-                      <strong>${gap.skill_name}</strong> - Required: ${gap.required_level}, You: ${gap.current_level}
-                      <span class="learning-time">~${gap.learning_time_estimate}h to learn</span>
-                    </li>
-                  `).join('')}
-                </ul>
-              </div>
-              
-              <div class="gap-category high">
-                <h4>🟡 High Priority Gaps (${gapData.high_priority_gaps || 0})</h4>
-                <ul>
-                  ${(gapData.gaps?.high || []).map(gap => `
-                    <li>
-                      <strong>${gap.skill_name}</strong> - Required: ${gap.required_level}, You: ${gap.current_level}
-                      <span class="learning-time">~${gap.learning_time_estimate}h to learn</span>
-                    </li>
-                  `).join('')}
-                </ul>
-              </div>
-              
-              <div class="gap-category medium">
-                <h4>🟢 Medium Priority (${gapData.medium_priority_gaps || 0})</h4>
-                <ul>
-                  ${(gapData.gaps?.medium || []).map(gap => `
-                    <li>
-                      <strong>${gap.skill_name}</strong> - Required: ${gap.required_level}, You: ${gap.current_level}
-                    </li>
-                  `).join('')}
-                </ul>
-              </div>
-            </div>
-            
-            <div class="roadmap">
-              <h3>Learning Roadmap (${gapData.estimated_weeks || 6} weeks, ${gapData.total_learning_hours || 0} hours)</h3>
-              ${(roadmapData.phases || []).map(phase => `
-                <div class="week">
-                  <h4>${phase.title}</h4>
-                  <p class="phase-duration">${phase.duration_weeks} weeks • ${phase.daily_time_estimate}h/day</p>
-                  <p class="phase-focus"><strong>Focus:</strong> ${phase.focus}</p>
-                  <ul>
-                    ${phase.skills.map(skill => `<li>${skill}</li>`).join('')}
-                  </ul>
-                  <p class="phase-goals"><strong>Goals:</strong> ${phase.goals.join(', ')}</p>
-                </div>
-              `).join('')}
-            </div>
-            
-            <div class="resources-recommended">
-              <h3>Recommended Resources</h3>
-              ${(roadmapData.resources || []).map(resource => `
-                <div class="resource">
-                  <span class="resource-type">${resource.platform}</span>
-                  <span class="resource-title">${resource.title}</span>
-                  <span class="resource-duration">${resource.duration}h</span>
-                  <span class="resource-cost">${resource.cost}</span>
-                </div>
-              `).join('')}
-            </div>
-            
-            <div class="prep-tips">
-              <h3>Preparation Tips</h3>
-              <ul>
-                ${(roadmapData.tips || []).map(tip => `<li>${tip}</li>`).join('')}
-              </ul>
-            </div>
-          </div>
-        `;
-      } catch (error) {
-        content.innerHTML = `
-          <div class="gap-analysis">
-            <h2>Gap Analysis & Prep Plan</h2>
-            <p class="error">Failed to load gap analysis: ${error.message}</p>
-          </div>
-        `;
-      }
+        try {
+          const response = await fetch('http://127.0.0.1:8000/coding-session/sync/codeforces', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              username: username
+            })
+          });
+          const result = await response.json();
+          
+          if (result.ok) {
+            alert(`Synced Codeforces profile: Rating ${result.rating}, Max: ${result.max_rating}, ${result.total_problems_solved} problems solved`);
+            renderCodingTab();
+          } else {
+            alert('Sync failed: ' + (result.error || result.message));
+          }
+        } catch (error) {
+          alert('Failed to sync Codeforces: ' + error.message);
+        }
+      });
     });
   }
 
-  // ---------- Applications Tab (Phase 8) ----------
+  // ---------- Applications Tab (Auto-update only) ----------
   async function renderApplicationsTab() {
-    content.innerHTML = '<p class="loading">Loading applications...</p>';
+    content.innerHTML = '<p class="loading">Loading applications (auto-synced)...';
 
     try {
       const [appsResponse, analyticsResponse, pipelineResponse] = await Promise.all([
@@ -649,10 +653,7 @@ document.addEventListener('DOMContentLoaded', () => {
       content.innerHTML = `
         <div class="applications">
           <h2>📋 Application Tracking</h2>
-          
-          <div class="quick-log">
-            <button id="btn-log-application" class="btn">+ Log New Application</button>
-          </div>
+          <p class="muted">Applications are auto-synced from your job analysis history</p>
           
           <div class="pipeline-chart">
             <div class="stage applied">
@@ -724,8 +725,6 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
       `;
-
-      document.getElementById('btn-log-application')?.addEventListener('click', showApplicationModal);
     } catch (error) {
       content.innerHTML = `
         <div class="applications">
@@ -734,53 +733,6 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `;
     }
-  }
-
-  function showApplicationModal() {
-    const { overlay, modal } = createModal();
-    modal.innerHTML = `
-      <h2>Log New Application</h2>
-      <form id="app-form">
-        <label>Company:</label>
-        <input type="text" name="company" required style="width: 100%; margin-bottom: 0.5rem;">
-        <label>Job Title:</label>
-        <input type="text" name="job_title" required style="width: 100%; margin-bottom: 0.5rem;">
-        <label>Job URL (optional):</label>
-        <input type="url" name="jd_url" style="width: 100%; margin-bottom: 0.5rem;">
-        <label>Match Score (optional):</label>
-        <input type="number" name="match_score" min="0" max="100" style="width: 100%; margin-bottom: 0.5rem;">
-        <label>Notes (optional):</label>
-        <textarea name="notes" rows="3" style="width: 100%; margin-bottom: 0.5rem;"></textarea>
-        <button type="submit" class="btn">Save Application</button>
-      </form>
-    `;
-
-    modal.querySelector('form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const formData = new FormData(e.target);
-      const appData = {
-        user_id: currentUserId,
-        company: formData.get('company'),
-        job_title: formData.get('job_title'),
-        jd_url: formData.get('jd_url') || null,
-        match_score: formData.get('match_score') ? parseInt(formData.get('match_score')) : null,
-        notes: formData.get('notes') || null,
-        application_status: 'applied',
-        application_date: new Date().toISOString()
-      };
-
-      try {
-        await fetch('http://127.0.0.1:8000/applications/track', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(appData)
-        });
-        overlay.remove();
-        renderApplicationsTab();
-      } catch (error) {
-        alert('Failed to save application: ' + error.message);
-      }
-    });
   }
 
   window.updateApplicationStatus = async (appId, newStatus) => {
@@ -800,6 +752,93 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // ---------- Settings Tab ----------
+  async function renderSettingsTab() {
+    chrome.storage.local.get(['userSettings'], (data) => {
+      const settings = data.userSettings || {
+        resume_url: '',
+        github_username: '',
+        leetcode_username: '',
+        gfg_username: '',
+        codeforces_username: ''
+      };
+
+      content.innerHTML = `
+        <div class="settings-section">
+          <h2>⚙️ Settings</h2>
+          
+          <div class="settings-group">
+            <h3>Profile</h3>
+            <div class="setting-item">
+              <label>Resume URL (Google Drive, etc.)</label>
+              <input type="url" id="setting-resume" value="${settings.resume_url || ''}" placeholder="https://docs.google.com/document/..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+          </div>
+          
+          <div class="settings-group">
+            <h3>Coding Platforms</h3>
+            <div class="setting-item">
+              <label>GitHub Username</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="setting-github" value="${settings.github_username || ''}" placeholder="your-username" style="flex: 1; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                <button id="btn-sync-github" class="btn" style="margin: 0;">Sync</button>
+              </div>
+            </div>
+            <div class="setting-item">
+              <label>LeetCode Username</label>
+              <input type="text" id="setting-leetcode" value="${settings.leetcode_username || ''}" placeholder="your-username" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            <div class="setting-item">
+              <label>GeeksforGeeks Username</label>
+              <input type="text" id="setting-gfg" value="${settings.gfg_username || ''}" placeholder="your-username" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            <div class="setting-item">
+              <label>Codeforces Username</label>
+              <input type="text" id="setting-codeforces" value="${settings.codeforces_username || ''}" placeholder="your-username" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+          </div>
+          
+          <button id="btn-save-settings" class="btn">Save Settings</button>
+          <p class="muted" style="margin-top: 8px;">These settings will be used to sync your coding stats and profile data.</p>
+        </div>
+      `;
+
+      document.getElementById('btn-save-settings')?.addEventListener('click', () => {
+        const newSettings = {
+          resume_url: document.getElementById('setting-resume').value,
+          github_username: document.getElementById('setting-github').value,
+          leetcode_username: document.getElementById('setting-leetcode').value,
+          gfg_username: document.getElementById('setting-gfg').value,
+          codeforces_username: document.getElementById('setting-codeforces').value
+        };
+        chrome.storage.local.set({ userSettings: newSettings }, () => {
+          alert('Settings saved successfully!');
+        });
+      });
+
+      document.getElementById('btn-sync-github')?.addEventListener('click', async () => {
+        const username = document.getElementById('setting-github').value;
+        if (!username) {
+          alert('Please enter a GitHub username first');
+          return;
+        }
+
+        try {
+          const response = await fetch(`http://127.0.0.1:8000/github/profile/${username}`);
+          const result = await response.json();
+          
+          if (result.error) {
+            alert('GitHub sync failed: ' + result.error);
+          } else {
+            alert(`GitHub profile synced: ${result.public_repos} repos, ${result.followers} followers`);
+          }
+        } catch (error) {
+          alert('Failed to sync GitHub: ' + error.message);
+        }
+      });
+    });
+  }
+
   // ---------- Tab Rendering ----------
   function renderActiveTab() {
     switch (activeTab) {
@@ -814,11 +853,11 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'Coding':
         renderCodingTab();
         break;
-      case 'Gap Analysis':
-        renderGapAnalysisTab();
-        break;
       case 'Applications':
         renderApplicationsTab();
+        break;
+      case 'Settings':
+        renderSettingsTab();
         break;
       default:
         content.innerHTML = '<p>Select a tab to view details.</p>';

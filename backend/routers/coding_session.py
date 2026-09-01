@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
+import httpx
+import os
 from backend.db.database import get_db
 from backend.models.coding_session import CodingSession
 from backend.models.user import User
@@ -319,29 +321,237 @@ def calculate_coding_streak(sessions: List[CodingSession]) -> int:
 
 @router.post("/sync/leetcode")
 async def sync_leetcode_profile(user_id: int, username: str, db: Session = Depends(get_db)):
-    """Sync LeetCode profile data (requires backend parser implementation)."""
-    return {
-        "message": "LeetCode sync not yet implemented",
-        "note": "Requires GraphQL API integration with LeetCode",
-        "status": "pending"
-    }
+    """Sync LeetCode profile data using GraphQL API."""
+    
+    if not username:
+        return {"error": "Username required"}
+    
+    try:
+        # LeetCode GraphQL API endpoint
+        query = """
+        query getUserProfile($username: String!) {
+            matchedUser(username: $username) {
+                submitStats: submitStatsGlobal {
+                    acSubmissionNum {
+                        difficulty
+                        count
+                    }
+                }
+                profile {
+                    realName
+                    userAvatar
+                    ranking
+                }
+            }
+        }
+        """
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                "https://leetcode.com/graphql",
+                json={
+                    "query": query,
+                    "variables": {"username": username}
+                },
+                headers={"Content-Type": "application/json"}
+            )
+            data = response.json()
+            
+            if "errors" in data:
+                return {"error": "User not found or API error", "details": data["errors"]}
+            
+            user_data = data["data"]["matchedUser"]
+            submit_stats = user_data["submitStats"]["acSubmissionNum"]
+            profile = user_data["profile"]
+            
+            # Extract problem counts by difficulty
+            easy = next((s["count"] for s in submit_stats if s["difficulty"] == "Easy"), 0)
+            medium = next((s["count"] for s in submit_stats if s["difficulty"] == "Medium"), 0)
+            hard = next((s["count"] for s in submit_stats if s["difficulty"] == "Hard"), 0)
+            total = easy + medium + hard
+            
+            # Create a session record for this sync
+            session_record = CodingSession(
+                user_id=user_id,
+                platform="leetcode",
+                session_type="sync",
+                duration_minutes=0,
+                problems_count=total,
+                problems_solved=total,
+                problems_data=[{
+                    "platform": "leetcode",
+                    "problem_id": "sync",
+                    "problem_name": f"LeetCode Profile Sync - {username}",
+                    "topic": "all",
+                    "difficulty": "mixed",
+                    "status": "accepted",
+                    "solve_time_minutes": None,
+                    "submission_url": f"https://leetcode.com/{username}"
+                }],
+                notes=f"Synced from LeetCode profile. Ranking: {profile.get('ranking', 'N/A')}",
+                session_date=datetime.utcnow()
+            )
+            db.add(session_record)
+            db.commit()
+            
+            return {
+                "ok": True,
+                "username": username,
+                "total_solved": total,
+                "easy": easy,
+                "medium": medium,
+                "hard": hard,
+                "ranking": profile.get("ranking"),
+                "real_name": profile.get("realName"),
+                "synced_at": datetime.utcnow().isoformat()
+            }
+            
+    except Exception as e:
+        return {"error": str(e), "message": "Failed to sync LeetCode profile"}
 
 
 @router.post("/sync/gfg")
 async def sync_gfg_profile(user_id: int, username: str, db: Session = Depends(get_db)):
-    """Sync GeeksforGeeks profile data (requires scraping/API integration)."""
-    return {
-        "message": "GFG sync not yet implemented",
-        "note": "Requires Selenium scraper or GFG API integration",
-        "status": "pending"
-    }
+    """Sync GeeksforGeeks profile data using web scraping."""
+    
+    if not username:
+        return {"error": "Username required"}
+    
+    try:
+        # GFG doesn't have a public API, so we'll use web scraping
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"https://auth.geeksforgeeks.org/user/{username}",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            
+            if response.status_code != 200:
+                return {"error": "Failed to fetch GFG profile", "status_code": response.status_code}
+            
+            html = response.text
+            
+            # Extract basic stats from HTML (this is a simplified approach)
+            # In production, you'd use BeautifulSoup for proper parsing
+            import re
+            
+            # Try to extract problem count from common patterns
+            problems_match = re.search(r'(\d+)\s+problems?\s+solved', html, re.IGNORECASE)
+            coding_score_match = re.search(r'coding\s+score[:\s]+(\d+)', html, re.IGNORECASE)
+            
+            problems_solved = int(problems_match.group(1)) if problems_match else 0
+            coding_score = int(coding_score_match.group(1)) if coding_score_match else 0
+            
+            # Create a session record
+            session_record = CodingSession(
+                user_id=user_id,
+                platform="gfg",
+                session_type="sync",
+                duration_minutes=0,
+                problems_count=problems_solved,
+                problems_solved=problems_solved,
+                problems_data=[{
+                    "platform": "gfg",
+                    "problem_id": "sync",
+                    "problem_name": f"GFG Profile Sync - {username}",
+                    "topic": "all",
+                    "difficulty": "mixed",
+                    "status": "accepted",
+                    "solve_time_minutes": None,
+                    "submission_url": f"https://auth.geeksforgeeks.org/user/{username}"
+                }],
+                notes=f"Synced from GFG profile. Coding Score: {coding_score}",
+                session_date=datetime.utcnow()
+            )
+            db.add(session_record)
+            db.commit()
+            
+            return {
+                "ok": True,
+                "username": username,
+                "problems_solved": problems_solved,
+                "coding_score": coding_score,
+                "synced_at": datetime.utcnow().isoformat(),
+                "note": "Web scraping - may need BeautifulSoup for accurate data"
+            }
+            
+    except Exception as e:
+        return {"error": str(e), "message": "Failed to sync GFG profile"}
 
 
 @router.post("/sync/codeforces")
 async def sync_codeforces_profile(user_id: int, username: str, db: Session = Depends(get_db)):
     """Sync Codeforces profile data using official API."""
-    return {
-        "message": "Codeforces sync not yet implemented",
-        "note": "Requires Codeforces API client",
-        "status": "pending"
-    }
+    
+    if not username:
+        return {"error": "Username required"}
+    
+    try:
+        # Codeforces has a public API
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Get user info
+            user_response = await client.get(
+                f"https://codeforces.com/api/user.info?handles={username}"
+            )
+            user_data = user_response.json()
+            
+            if user_data["status"] != "OK":
+                return {"error": "User not found on Codeforces"}
+            
+            user_info = user_data["result"][0]
+            
+            # Get user submissions
+            submissions_response = await client.get(
+                f"https://codeforces.com/api/user.status?handle={username}"
+            )
+            submissions_data = submissions_response.json()
+            
+            if submissions_data["status"] != "OK":
+                return {"error": "Failed to fetch submissions"}
+            
+            submissions = submissions_data["result"]
+            accepted = [s for s in submissions if s["verdict"] == "OK"]
+            total_problems = len(accepted)
+            
+            # Count by rating (difficulty)
+            difficulty_counts = {}
+            for sub in accepted:
+                rating = sub.get("problem", {}).get("rating", "Unknown")
+                difficulty_counts[rating] = difficulty_counts.get(rating, 0) + 1
+            
+            # Create a session record
+            session_record = CodingSession(
+                user_id=user_id,
+                platform="codeforces",
+                session_type="sync",
+                duration_minutes=0,
+                problems_count=total_problems,
+                problems_solved=total_problems,
+                problems_data=[{
+                    "platform": "codeforces",
+                    "problem_id": "sync",
+                    "problem_name": f"Codeforces Profile Sync - {username}",
+                    "topic": "all",
+                    "difficulty": "mixed",
+                    "status": "accepted",
+                    "solve_time_minutes": None,
+                    "submission_url": f"https://codeforces.com/profile/{username}"
+                }],
+                notes=f"Synced from Codeforces. Rating: {user_info.get('rating', 'Unrated')}, Max: {user_info.get('maxRating', 'N/A')}",
+                session_date=datetime.utcnow()
+            )
+            db.add(session_record)
+            db.commit()
+            
+            return {
+                "ok": True,
+                "username": username,
+                "rating": user_info.get("rating"),
+                "max_rating": user_info.get("maxRating"),
+                "rank": user_info.get("rank"),
+                "total_problems_solved": total_problems,
+                "difficulty_breakdown": difficulty_counts,
+                "synced_at": datetime.utcnow().isoformat()
+            }
+            
+    except Exception as e:
+        return {"error": str(e), "message": "Failed to sync Codeforces profile"}

@@ -6,7 +6,7 @@ from backend.db.database import engine
 from backend.db.init_db import init_db
 from backend.routers import (
     job, resume, company, coding, qa, 
-    coding_session, gap_analysis, application_tracking
+    coding_session, gap_analysis, application_tracking, github
 )
 
 app = FastAPI(title="Placement FocusBar Backend")
@@ -65,3 +65,6 @@ app.include_router(gap_analysis.router, prefix="/gap-analysis", tags=["gap-analy
 
 # Phase 8: Application tracking
 app.include_router(application_tracking.router, prefix="/applications", tags=["applications"])
+
+# GitHub API integration
+app.include_router(github.router, prefix="/github", tags=["github"])

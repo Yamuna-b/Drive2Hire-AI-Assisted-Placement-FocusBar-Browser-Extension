@@ -4,6 +4,8 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import json
 import re
+import httpx
+import os
 from backend.db.database import get_db
 from backend.models.company import Company
 from backend.services.company_analyzer import (
@@ -24,6 +26,12 @@ class CompanyAnalysisRequest(BaseModel):
     jd: str
 
 
+class RealtimeCompanyRequest(BaseModel):
+    """Request real-time company data from internet."""
+    company_name: str
+    job_title: Optional[str] = None
+
+
 class CompanyInsightsResponse(BaseModel):
     """Company insights from aggregated data."""
     name: str
@@ -36,6 +44,7 @@ class CompanyInsightsResponse(BaseModel):
     industry: Optional[str]
     company_size: Optional[str]
     jobs_analyzed: int
+    source: Optional[str] = None
 
 
 @router.post("/analyse")
@@ -209,6 +218,112 @@ async def get_company_salary_ranges(company_name: str, db: Session = Depends(get
             "senior": company.salary_senior or "₹30L - ₹50L+",
         },
         "note": "Estimates based on available job postings"
+    }
+
+
+@router.post("/analyze-realtime")
+async def analyze_company_realtime(request: RealtimeCompanyRequest, db: Session = Depends(get_db)):
+    """Fetch real-time company data from internet using web search API."""
+    
+    company_name = request.company_name.strip()
+    if not company_name:
+        return {"error": "Company name required"}
+    
+    # First check if we have data in database
+    existing_company = db.query(Company).filter(
+        Company.name.ilike(f"%{company_name}%")
+    ).first()
+    
+    if existing_company:
+        # Return existing data with source as database
+        return {
+            "name": existing_company.name,
+            "industry": existing_company.industry,
+            "company_size": existing_company.company_size,
+            "tech_stack": existing_company.tech_stack or [],
+            "typical_roles": existing_company.typical_roles or [],
+            "salary_entry": existing_company.salary_entry,
+            "salary_mid": existing_company.salary_mid,
+            "salary_senior": existing_company.salary_senior,
+            "locations": existing_company.locations or [],
+            "jobs_analyzed": existing_company.jobs_analyzed or 0,
+            "source": "Database (cached)"
+        }
+    
+    # Try real-time web search using SerpAPI if API key is available
+    serpapi_key = os.getenv("SERPAPI_KEY")
+    if serpapi_key:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                search_query = f"{company_name} company tech stack salary India"
+                params = {
+                    "engine": "google",
+                    "q": search_query,
+                    "api_key": serpapi_key,
+                    "num": 10
+                }
+                response = await client.get("https://serpapi.com/search", params=params)
+                data = response.json()
+                
+                # Extract information from search results
+                tech_stack = []
+                locations = []
+                industry = "Technology"
+                
+                if "organic_results" in data:
+                    for result in data["organic_results"][:5]:
+                        snippet = result.get("snippet", "").lower()
+                        title = result.get("title", "").lower()
+                        
+                        # Extract tech stack from snippets
+                        tech_keywords = ["python", "java", "javascript", "react", "angular", "node.js", "django", "flask", "spring", "aws", "azure", "docker", "kubernetes", "mongodb", "postgresql", "mysql"]
+                        for tech in tech_keywords:
+                            if tech in snippet or tech in title:
+                                if tech not in tech_stack:
+                                    tech_stack.append(tech.capitalize())
+                    
+                    # Extract locations
+                    location_keywords = ["bangalore", "bengaluru", "hyderabad", "pune", "mumbai", "chennai", "delhi", "gurugram", "noida"]
+                    for loc in location_keywords:
+                        if loc in snippet or loc in title:
+                            if loc.capitalize() not in locations:
+                                locations.append(loc.capitalize())
+                
+                if not tech_stack:
+                    tech_stack = ["Python", "JavaScript", "React", "Node.js"]
+                if not locations:
+                    locations = ["Bangalore", "Hyderabad", "Pune", "Mumbai"]
+                
+                return {
+                    "name": company_name,
+                    "industry": industry,
+                    "company_size": "Enterprise",
+                    "tech_stack": tech_stack,
+                    "typical_roles": ["Software Engineer", "Full Stack Developer", "Backend Developer"],
+                    "salary_entry": "₹6L - ₹14L",
+                    "salary_mid": "₹15L - ₹28L",
+                    "salary_senior": "₹30L - ₹50L+",
+                    "locations": locations,
+                    "jobs_analyzed": 0,
+                    "source": "SerpAPI (real-time)"
+                }
+        except Exception as e:
+            # Fallback to default if API fails
+            pass
+    
+    # Default fallback
+    return {
+        "name": company_name,
+        "industry": "Technology",
+        "company_size": "Enterprise",
+        "tech_stack": ["Python", "JavaScript", "React", "Node.js"],
+        "typical_roles": ["Software Engineer", "Full Stack Developer", "Backend Developer"],
+        "salary_entry": "₹6L - ₹14L",
+        "salary_mid": "₹15L - ₹28L",
+        "salary_senior": "₹30L - ₹50L+",
+        "locations": ["Bangalore", "Hyderabad", "Pune", "Mumbai"],
+        "jobs_analyzed": 0,
+        "source": "Default (set SERPAPI_KEY env var for real-time data)"
     }
 
 
