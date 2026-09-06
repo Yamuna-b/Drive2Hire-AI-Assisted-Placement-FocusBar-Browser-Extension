@@ -5,8 +5,8 @@ from sqlalchemy import text
 from backend.db.database import engine
 from backend.db.init_db import init_db
 from backend.routers import (
-    job, resume, company, coding, qa, 
-    coding_session, gap_analysis, application_tracking, github
+    job, resume, company, coding, qa,
+    coding_session, gap_analysis, application_tracking, github, auth
 )
 
 app = FastAPI(title="Placement FocusBar Backend")
@@ -68,3 +68,4 @@ app.include_router(application_tracking.router, prefix="/applications", tags=["a
 
 # GitHub API integration
 app.include_router(github.router, prefix="/github", tags=["github"])
+app.include_router(auth.router, prefix="/auth", tags=["auth"])

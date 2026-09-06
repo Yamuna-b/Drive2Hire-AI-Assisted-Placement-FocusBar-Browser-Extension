@@ -2,23 +2,25 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Placement FocusBar</title>
+  <title>Drive2Hire FocusBar</title>
   <link rel="stylesheet" href="focusbar.css">
 </head>
 <body>
-  <h1>Placement FocusBar</h1>
+  <header class="app-header">
+    <h1>Drive2Hire</h1>
+    <p class="subtitle">Placement FocusBar</p>
+    <p id="welcome-line" class="muted"></p>
+  </header>
   <nav>
     <ul>
-      <li id="tab-job">Job</li>
-      <li id="tab-company">Company</li>
-      <li id="tab-coding">Coding</li>
-      <li id="tab-applications">Applications</li>
-      <li id="tab-settings">Settings</li>
+      <li id="tab-home" data-tab="Home" class="active">Home</li>
+      <li id="tab-job" data-tab="Job">Job</li>
+      <li id="tab-company" data-tab="Company">Company</li>
+      <li id="tab-coding" data-tab="Coding">Coding</li>
+      <li id="tab-settings" data-tab="Settings">Settings</li>
     </ul>
   </nav>
-  <section id="content">
-    <p>Select a tab to view details.</p>
-  </section>
+  <section id="content"></section>
   <footer id="backend-status">Checking backend…</footer>
   <script src="focusbar.js"></script>
 </body>

@@ -1,894 +1,489 @@
-document.addEventListener('DOMContentLoaded', () => {
-  const content = document.getElementById('content');
-  const statusEl = document.getElementById('backend-status');
-  const tabs = document.querySelectorAll('nav ul li');
-  let activeTab = 'Job';
-  let currentUserId = 1; // Default user ID
+document.addEventListener("DOMContentLoaded", () => {
+  const content = document.getElementById("content");
+  const statusEl = document.getElementById("backend-status");
+  const welcomeEl = document.getElementById("welcome-line");
+  const tabs = document.querySelectorAll("nav ul li");
+  let activeTab = "Home";
 
-  function skillList(label, items, className) {
-    if (!items || items.length === 0) {
-      return `<div class="skill-group"><strong>${label}</strong><p class="muted">None detected</p></div>`;
-    }
-    const tags = items.map((s) => `<span class="tag ${className}">${s}</span>`).join('');
-    return `<div class="skill-group"><strong>${label}</strong><div class="tags">${tags}</div></div>`;
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
   }
 
-  // ---------- Q&A Modal ----------
-  function createModal() {
-    const overlay = document.createElement('div');
-    overlay.id = 'qa-modal-overlay';
-    overlay.style.position = 'fixed';
-    overlay.style.top = '0';
-    overlay.style.left = '0';
-    overlay.style.width = '100%';
-    overlay.style.height = '100%';
-    overlay.style.background = 'rgba(0,0,0,0.5)';
-    overlay.style.display = 'flex';
-    overlay.style.alignItems = 'center';
-    overlay.style.justifyContent = 'center';
-    overlay.style.zIndex = '1000';
-
-    const modal = document.createElement('div');
-    modal.id = 'qa-modal';
-    modal.style.background = '#fff';
-    modal.style.padding = '1rem';
-    modal.style.borderRadius = '8px';
-    modal.style.maxWidth = '90%';
-    modal.style.maxHeight = '80%';
-    modal.style.overflowY = 'auto';
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-    return { overlay, modal };
+  function skillNames(items) {
+    return (items || []).map((s) => (typeof s === "string" ? s : s.name)).filter(Boolean);
   }
 
-  function showDurationModal(gapSkills) {
-    const { overlay, modal } = createModal();
-    const form = document.createElement('form');
-    form.id = 'qa-form';
-    modal.appendChild(document.createElement('h2')).innerText = 'Skill Experience Details';
-    gapSkills.forEach((skillObj, idx) => {
-      const container = document.createElement('div');
-      container.style.marginBottom = '1rem';
-      container.innerHTML = `
-        <strong>${skillObj.name} (required: ${skillObj.required_duration})</strong><br/>
-        <label>Do you have experience? 
-          <select name="hasExp_${idx}" required>
-            <option value="yes">Yes</option>
-            <option value="no">No</option>
-          </select>
-        </label><br/>
-        <label>Duration: 
-          <select name="duration_${idx}" disabled>
-            <option value="">Select…</option>
-            <option value="<1 year"><1 year</option>
-            <option value="1-2 years">1-2 years</option>
-            <option value="2+ years">2+ years</option>
-          </select>
-        </label><br/>
-        <label>Project notes (optional):<br/>
-          <textarea name="notes_${idx}" rows="2" style="width:100%" disabled></textarea>
-        </label>
-      `;
-      form.appendChild(container);
-    });
-    const submitBtn = document.createElement('button');
-    submitBtn.type = 'submit';
-    submitBtn.textContent = 'Save & Re‑analyze';
-    submitBtn.style.marginTop = '1rem';
-    form.appendChild(submitBtn);
-    modal.appendChild(form);
+  function tags(items, className) {
+    const names = skillNames(items);
+    if (!names.length) return `<p class="muted">None detected on this page</p>`;
+    return `<div class="tags">${names.map((n) => `<span class="tag ${className}">${escapeHtml(n)}</span>`).join("")}</div>`;
+  }
 
-    form.addEventListener('change', (e) => {
-      const target = e.target;
-      if (target.name && target.name.startsWith('hasExp_')) {
-        const idx = target.name.split('_')[1];
-        const durSelect = form.querySelector(`select[name="duration_${idx}"]`);
-        const notesArea = form.querySelector(`textarea[name="notes_${idx}"]`);
-        if (target.value === 'yes') {
-          durSelect.disabled = false;
-          notesArea.disabled = false;
-        } else {
-          durSelect.disabled = true;
-          notesArea.disabled = true;
-        }
-      }
-    });
+  function emptyBlock(title, text) {
+    return `<div class="card"><h3>${title}</h3><p class="muted">${text}</p></div>`;
+  }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const data = new FormData(form);
-      const updates = [];
-      for (let i = 0; i < gapSkills.length; i++) {
-        const hasExp = data.get(`hasExp_${i}`);
-        if (hasExp === 'yes') {
-          const duration = data.get(`duration_${i}`) || null;
-          const notes = data.get(`notes_${i}`) || null;
-          updates.push({ name: gapSkills[i].name, duration, notes });
+  async function getStore() {
+    const local = await chrome.storage.local.get([
+      "profile",
+      "userSkills",
+      "resumeText",
+      "applications",
+      "savedJobs",
+      "codingHandles",
+      "codingSessions",
+      "googleClientId",
+    ]);
+    const session = await chrome.storage.session.get(["liveAnalysis", "liveJobData"]);
+    return { ...local, liveAnalysis: session.liveAnalysis, liveJobData: session.liveJobData };
+  }
+
+  function renderSignIn() {
+    content.innerHTML = `
+      <div class="card">
+        <h3>Sign in</h3>
+        <button id="btn-google" class="btn">Sign in with Google</button>
+        <p id="google-error" class="error"></p>
+        <p class="muted">Uses your Google account. Chrome will ask you to pick an account.</p>
+        <hr>
+        <p class="muted">Or continue locally (no Google):</p>
+        <label>Name<br><input id="auth-name" type="text" placeholder="Your name"></label>
+        <label>Email<br><input id="auth-email" type="email" placeholder="you@example.com"></label>
+        <button id="btn-signin" class="btn">Continue without Google</button>
+      </div>
+    `;
+    document.getElementById("btn-google").addEventListener("click", () => {
+      const errEl = document.getElementById("google-error");
+      errEl.textContent = "Opening Google…";
+      chrome.runtime.sendMessage({ type: "googleSignIn" }, (res) => {
+        if (chrome.runtime.lastError) {
+          errEl.textContent = chrome.runtime.lastError.message;
+          return;
         }
-      }
-      const stored = await chrome.storage.local.get('userSkills');
-      const current = stored.userSkills || [];
-      updates.forEach((u) => {
-        const idx = current.findIndex((s) => s.name.toLowerCase() === u.name.toLowerCase());
-        if (idx >= 0) {
-          if (u.duration) current[idx].duration_bucket = u.duration;
-          if (u.notes) current[idx].project_notes = u.notes;
-        } else {
-          current.push({ name: u.name, level: 'moderate', duration_bucket: u.duration, project_notes: u.notes });
+        if (!res?.ok) {
+          errEl.textContent = res?.error || "Google sign-in failed";
+          return;
         }
+        welcomeEl.textContent = `Welcome ${res.user.name}`;
+        renderActiveTab();
       });
-      await chrome.storage.local.set({ userSkills: current });
-      overlay.remove();
-      chrome.runtime.sendMessage({ type: 'analyseCurrentTab' }, () => {});
+    });
+    document.getElementById("btn-signin").addEventListener("click", async () => {
+      const name = document.getElementById("auth-name").value.trim();
+      const email = document.getElementById("auth-email").value.trim();
+      if (!name || !email) return;
+      await chrome.storage.local.set({ profile: { name, email, signedIn: true } });
+      welcomeEl.textContent = `Welcome ${name}`;
+      renderActiveTab();
     });
   }
 
-  // ---------- Job Tab (Phase 1-4) ----------
-  function renderJobTab(analysis, error) {
+  async function renderHome() {
+    const data = await getStore();
+    const profile = data.profile || {};
+    if (!profile.signedIn) {
+      renderSignIn();
+      return;
+    }
+    const sessions = data.codingSessions || [];
+    const apps = data.applications || [];
+    const saved = data.savedJobs || [];
+    const last = data.liveAnalysis;
+
+    content.innerHTML = `
+      <h2>Home</h2>
+      <div class="card">
+        <h3>Today's coding activity</h3>
+        ${
+          sessions.length
+            ? `<p>${sessions.length} session(s) stored from pages you visited.</p>`
+            : `<p class="muted">No coding sessions yet. Open LeetCode / GFG / Codeforces and use the Coding tab.</p>`
+        }
+      </div>
+      <div class="card">
+        <h3>Last analyzed page</h3>
+        ${
+          last
+            ? `<p><strong>${escapeHtml(last.title || "Untitled")}</strong><br>${escapeHtml(last.company || "")}</p>
+               <p>Match: ${last.match_percent || 0}%</p>`
+            : `<p class="muted">Open any job page and use the Job tab → Analyze this page.</p>`
+        }
+      </div>
+      <div class="card">
+        <h3>Applications</h3>
+        ${
+          apps.length
+            ? apps.map((a) => `<p>${escapeHtml(a.title)} — ${escapeHtml(a.company)} (${escapeHtml(a.status)})</p>`).join("")
+            : `<p class="muted">None logged yet. Analyze a job, then log status on the Job tab.</p>`
+        }
+      </div>
+      <div class="card">
+        <h3>Saved jobs</h3>
+        ${
+          saved.length
+            ? saved.map((j) => `<p>${escapeHtml(j.title)} — ${escapeHtml(j.company)}</p>`).join("")
+            : `<p class="muted">Empty until you save a job from the Job tab.</p>`
+        }
+      </div>
+      <div class="card">
+        <h3>Quick stats</h3>
+        <p>Skills in profile: ${(data.userSkills || []).length}</p>
+        <p>Jobs applied (logged): ${apps.filter((a) => a.status === "applied").length}</p>
+      </div>
+    `;
+  }
+
+  function bindAnalyse(onDone) {
+    const btn = document.getElementById("btn-analyse");
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      btn.textContent = "Reading page…";
+      chrome.runtime.sendMessage({ type: "analyseCurrentTab" }, (response) => {
+        btn.disabled = false;
+        btn.textContent = "Analyze this page";
+        if (chrome.runtime.lastError || !response?.ok) {
+          onDone(null, response?.error || chrome.runtime.lastError?.message || "Analyze failed");
+          return;
+        }
+        onDone(response.analysis, null);
+      });
+    });
+  }
+
+  async function renderJob(analysis, error) {
+    const data = await getStore();
+    analysis = analysis || data.liveAnalysis;
+
     if (error) {
-      content.innerHTML = `
-        <p class="error">${error}</p>
-        <button id="btn-analyse" class="btn">Analyze current job page</button>
-        <p class="muted">Open any job listing page (LinkedIn, Naukri, Indeed, Glassdoor, or any website) and click above.</p>
-      `;
-      bindAnalyseButton();
+      content.innerHTML = `<p class="error">${escapeHtml(error)}</p><button id="btn-analyse" class="btn">Analyze this page</button>`;
+      bindAnalyse((a, e) => renderJob(a, e));
       return;
     }
 
     if (!analysis) {
       content.innerHTML = `
-        <p>No job analyzed yet.</p>
-        <button id="btn-analyse" class="btn">Analyze current job page</button>
-        <p class="muted">Visit any job posting page, then click above.</p>
+        <h2>Job</h2>
+        ${emptyBlock("Live page analysis", "Open any job posting (any website). Click Analyze — we read the page text, we do not use a canned template.")}
+        <button id="btn-analyse" class="btn">Analyze this page</button>
       `;
-      bindAnalyseButton();
+      bindAnalyse((a, e) => renderJob(a, e));
       return;
     }
 
-    const match = analysis.match || { covered: [], weak: [], missing: [], needs_duration: [] };
-
+    const match = analysis.match || { covered: [], weak: [], missing: [] };
+    const exp = analysis.experience || {};
     content.innerHTML = `
+      <h2>Job analysis</h2>
       <div class="job-snapshot">
-        <h2>${analysis.title || 'Unknown role'}</h2>
-        <p class="company">${analysis.company || 'Unknown company'}</p>
+        <h2>${escapeHtml(analysis.title || "Could not read title")}</h2>
+        <p class="company">${escapeHtml(analysis.company || "Could not read company")}</p>
+        <p class="muted">${escapeHtml(analysis.location || "")} ${escapeHtml(analysis.work_mode || "")}</p>
+        <p><strong>Match: ${analysis.match_percent || 0}%</strong> — based on your Settings skills vs this page.</p>
       </div>
-
-      ${skillList('Mandatory skills', analysis.mandatory_skills.map(s => s.name), 'mandatory')}
-      ${skillList('Nice-to-have skills', analysis.nice_to_have_skills.map(s => s.name), 'nice')}
-
+      <div class="skill-group"><strong>Mandatory (from this JD)</strong>${tags(analysis.mandatory_skills, "mandatory")}</div>
+      <div class="skill-group"><strong>Nice-to-have (from this JD)</strong>${tags(analysis.nice_to_have_skills, "nice")}</div>
+      ${
+        exp.minimum_years
+          ? `<p>Experience stated on page: ${exp.minimum_years}+ years${exp.focus_skill ? " (" + escapeHtml(exp.focus_skill) + ")" : ""}</p>`
+          : ""
+      }
+      ${exp.education ? `<p>Education stated on page: ${escapeHtml(exp.education)}</p>` : ""}
       <div class="match-section">
         <strong>Your match</strong>
-        ${skillList('Covered', match.covered, 'covered')}
-        ${skillList('Weak', match.weak, 'weak')}
-        ${skillList('Missing', match.missing, 'missing')}
+        <div class="skill-group"><strong>Covered</strong>${tags(match.covered, "covered")}</div>
+        <div class="skill-group"><strong>Weak</strong>${tags(match.weak, "weak")}</div>
+        <div class="skill-group"><strong>Missing</strong>${tags(match.missing, "missing")}</div>
       </div>
-
-      <button id="btn-analyse" class="btn">Re-analyze current page</button>
-      <button id="btn-qa" class="btn" style="margin-top: 0.5rem; background: #6366f1;">Refine Skills Q&A</button>
+      <p class="muted">Source: live page text. Add skills in Settings so match is about you, not a default profile.</p>
+      <button id="btn-analyse" class="btn">Analyze this page</button>
+      <button id="btn-save-job" class="btn">Save job</button>
+      <button id="btn-qa" class="btn">Refine skills Q&amp;A</button>
+      <div class="card">
+        <h3>Log outcome</h3>
+        <select id="outcome-status">
+          <option value="applied">Applied</option>
+          <option value="shortlisted">Shortlisted</option>
+          <option value="interview">Interview</option>
+          <option value="offered">Offered</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <button id="btn-log" class="btn">Save status</button>
+      </div>
     `;
-    bindAnalyseButton();
-    
-    const qaBtn = document.getElementById('btn-qa');
-    if (qaBtn) {
-      qaBtn.addEventListener('click', () => {
-        triggerQASession(analysis);
-      });
-    }
+    bindAnalyse((a, e) => renderJob(a, e));
 
-    if (match.needs_duration && match.needs_duration.length) {
-      showDurationModal(match.needs_duration);
-    }
-  }
-
-  function triggerQASession(analysis) {
-    chrome.storage.local.get('userSkills', (data) => {
-      const userSkills = data.userSkills || [];
-      fetch('http://127.0.0.1:8000/qa/generate-questions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mandatory_skills: analysis.mandatory_skills,
-          nice_to_have_skills: analysis.nice_to_have_skills,
-          user_skills: userSkills
-        })
-      })
-      .then(res => res.json())
-      .then(qaData => {
-        if (qaData.gap_skills && qaData.gap_skills.length > 0) {
-          showDurationModal(qaData.gap_skills);
-        } else {
-          alert('No skills need refinement! You\'re well-matched for this role.');
-        }
-      })
-      .catch(err => {
-        alert('Q&A service error: ' + err.message);
-      });
+    document.getElementById("btn-save-job")?.addEventListener("click", async () => {
+      const saved = data.savedJobs || [];
+      saved.unshift({ title: analysis.title, company: analysis.company, url: analysis.page_url, at: Date.now() });
+      await chrome.storage.local.set({ savedJobs: saved.slice(0, 50) });
     });
-  }
 
-  function bindAnalyseButton() {
-    const btn = document.getElementById('btn-analyse');
-    if (!btn) return;
-
-    btn.addEventListener('click', () => {
-      btn.disabled = true;
-      btn.textContent = 'Analyzing…';
-
-      chrome.runtime.sendMessage({ type: 'analyseCurrentTab' }, (response) => {
-        btn.disabled = false;
-        btn.textContent = 'Re-analyze current page';
-
-        if (chrome.runtime.lastError || !response?.ok) {
-          if (activeTab === 'Job') {
-            const msg = response?.error || chrome.runtime.lastError?.message || 'Analysis failed. Is the backend running?';
-            renderJobTab(null, msg);
-          }
-          return;
-        }
-
-        if (activeTab === 'Job') {
-          renderJobTab(response.analysis, null);
-        }
+    document.getElementById("btn-log")?.addEventListener("click", async () => {
+      const apps = data.applications || [];
+      apps.unshift({
+        title: analysis.title,
+        company: analysis.company,
+        status: document.getElementById("outcome-status").value,
+        at: Date.now(),
       });
+      await chrome.storage.local.set({ applications: apps });
     });
-  }
 
-  // ---------- Company Tab (Phase 5 + Gap Analysis) ----------
-  async function renderCompanyTab() {
-    chrome.storage.local.get('lastJobAnalysis', async (data) => {
-      const analysis = data.lastJobAnalysis;
-      if (!analysis || !analysis.company) {
-        content.innerHTML = `
-          <div class="company-section">
-            <h2>Company & Gap Analysis</h2>
-            <p class="muted">Analyze a job page first to see company insights and skill gaps.</p>
-            <button id="btn-analyze-company" class="btn">Analyze Current Job Page</button>
-          </div>
-        `;
-        document.getElementById('btn-analyze-company')?.addEventListener('click', () => {
-          chrome.runtime.sendMessage({ type: 'analyseCurrentTab' }, () => {
-            renderCompanyTab();
-          });
-        });
+    document.getElementById("btn-qa")?.addEventListener("click", () => {
+      const missing = match.missing || [];
+      if (!missing.length) {
+        alert("No missing skills on this JD vs your profile.");
         return;
       }
-
-      content.innerHTML = '<p class="loading">Loading company insights and gap analysis...</p>';
-
-      try {
-        // Fetch real-time company data from internet
-        const companyResponse = await fetch(`http://127.0.0.1:8000/company/analyze-realtime`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            company_name: analysis.company,
-            job_title: analysis.title
-          })
+      const overlay = document.createElement("div");
+      overlay.id = "qa-modal-overlay";
+      overlay.innerHTML = `<div id="qa-modal"><h2>Skill Q&amp;A</h2>
+        ${missing
+          .map(
+            (name, i) => `
+          <p><strong>${escapeHtml(name)}</strong></p>
+          <label>Have you used this?
+            <select id="qa-has-${i}"><option value="no">No</option><option value="yes">Yes</option></select>
+          </label>
+          <label>Duration <input id="qa-dur-${i}" placeholder="e.g. 1-2 years"></label>
+          <label>Notes <textarea id="qa-notes-${i}"></textarea></label>
+        `
+          )
+          .join("")}
+        <button id="qa-save" class="btn">Save to profile</button>
+        <button id="qa-close" class="btn">Close</button>
+      </div>`;
+      document.body.appendChild(overlay);
+      document.getElementById("qa-close").onclick = () => overlay.remove();
+      document.getElementById("qa-save").onclick = async () => {
+        const skills = data.userSkills || [];
+        missing.forEach((name, i) => {
+          if (document.getElementById(`qa-has-${i}`).value !== "yes") return;
+          const entry = {
+            name,
+            level: "moderate",
+            duration_bucket: document.getElementById(`qa-dur-${i}`).value || null,
+            project_notes: document.getElementById(`qa-notes-${i}`).value || null,
+          };
+          const idx = skills.findIndex((s) => s.name.toLowerCase() === name.toLowerCase());
+          if (idx >= 0) skills[idx] = { ...skills[idx], ...entry };
+          else skills.push(entry);
         });
-        const companyData = await companyResponse.json();
-
-        // Fetch gap analysis
-        const gapResponse = await fetch('http://127.0.0.1:8000/gap-analysis/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: currentUserId,
-            job_title: analysis.title,
-            company: analysis.company,
-            mandatory_skills: analysis.mandatory_skills || [],
-            nice_to_have_skills: analysis.nice_to_have_skills || []
-          })
+        await chrome.storage.local.set({ userSkills: skills });
+        overlay.remove();
+        chrome.runtime.sendMessage({ type: "analyseCurrentTab" }, (res) => {
+          if (res?.ok) renderJob(res.analysis, null);
         });
-        const gapData = await gapResponse.json();
-
-        // Fetch roadmap
-        const roadmapResponse = await fetch('http://127.0.0.1:8000/gap-analysis/roadmap', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: currentUserId,
-            job_title: analysis.title,
-            company: analysis.company,
-            mandatory_skills: analysis.mandatory_skills || [],
-            nice_to_have_skills: analysis.nice_to_have_skills || []
-          })
-        });
-        const roadmapData = await roadmapResponse.json();
-
-        content.innerHTML = `
-          <div class="company-section">
-            <h2>Company & Gap Analysis</h2>
-            
-            <div class="company-card">
-              <h3>${analysis.company}</h3>
-              <p class="industry">${companyData.industry || 'Technology'}</p>
-              <p class="company-size">${companyData.company_size || 'Enterprise'}</p>
-              <p class="company-source">Data source: ${companyData.source || 'Real-time web search'}</p>
-            </div>
-            
-            <section class="tech-stack">
-              <h4>Tech Stack</h4>
-              <div class="skills">
-                ${(companyData.tech_stack || []).map(tech => `<span class="skill-tag">${tech}</span>`).join('')}
-              </div>
-            </section>
-            
-            <section class="roles">
-              <h4>Typical Roles</h4>
-              <ul>
-                ${(companyData.typical_roles || []).map(role => `<li>${role}</li>`).join('')}
-              </ul>
-            </section>
-            
-            <section class="salary">
-              <h4>Salary Bands (INR/year)</h4>
-              <div class="salary-grid">
-                <div class="salary-tier">
-                  <span class="level">Entry Level</span>
-                  <span class="amount">${companyData.salary_entry || '₹6L - ₹14L'}</span>
-                </div>
-                <div class="salary-tier">
-                  <span class="level">Mid Level</span>
-                  <span class="amount">${companyData.salary_mid || '₹15L - ₹28L'}</span>
-                </div>
-                <div class="salary-tier">
-                  <span class="level">Senior</span>
-                  <span class="amount">${companyData.salary_senior || '₹30L - ₹50L+'}</span>
-                </div>
-              </div>
-            </section>
-            
-            <div class="gap-summary">
-              <h3>Skill Gap Analysis for ${analysis.title}</h3>
-              <div class="match-score">
-                <span class="score-label">Match Confidence</span>
-                <span class="score-value">${gapData.confidence_score || 65}%</span>
-              </div>
-              
-              <div class="gap-category critical">
-                <h4>🔴 Critical Gaps (${gapData.critical_gaps || 0})</h4>
-                <ul>
-                  ${(gapData.gaps?.critical || []).map(gap => `
-                    <li>
-                      <strong>${gap.skill_name}</strong> - Required: ${gap.required_level}, You: ${gap.current_level}
-                      <span class="learning-time">~${gap.learning_time_estimate}h to learn</span>
-                    </li>
-                  `).join('')}
-                </ul>
-              </div>
-              
-              <div class="gap-category high">
-                <h4>🟡 High Priority Gaps (${gapData.high_priority_gaps || 0})</h4>
-                <ul>
-                  ${(gapData.gaps?.high || []).map(gap => `
-                    <li>
-                      <strong>${gap.skill_name}</strong> - Required: ${gap.required_level}, You: ${gap.current_level}
-                      <span class="learning-time">~${gap.learning_time_estimate}h to learn</span>
-                    </li>
-                  `).join('')}
-                </ul>
-              </div>
-            </div>
-            
-            <div class="roadmap">
-              <h3>Learning Roadmap (${gapData.estimated_weeks || 6} weeks, ${gapData.total_learning_hours || 0} hours)</h3>
-              ${(roadmapData.phases || []).map(phase => `
-                <div class="week">
-                  <h4>${phase.title}</h4>
-                  <p class="phase-duration">${phase.duration_weeks} weeks • ${phase.daily_time_estimate}h/day</p>
-                  <p class="phase-focus"><strong>Focus:</strong> ${phase.focus}</p>
-                  <ul>
-                    ${phase.skills.map(skill => `<li>${skill}</li>`).join('')}
-                  </ul>
-                  <p class="phase-goals"><strong>Goals:</strong> ${phase.goals.join(', ')}</p>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        `;
-      } catch (error) {
-        content.innerHTML = `
-          <div class="company-section">
-            <h2>Company & Gap Analysis</h2>
-            <p class="error">Failed to load data: ${error.message}</p>
-          </div>
-        `;
-      }
-    });
-  }
-
-  // ---------- Coding Tab (Phase 6) ----------
-  async function renderCodingTab() {
-    content.innerHTML = '<p class="loading">Loading coding stats...</p>';
-
-    try {
-      const response = await fetch(`http://127.0.0.1:8000/coding-session/user/${currentUserId}/stats`);
-      const stats = await response.json();
-
-      if (stats.total_sessions === 0) {
-        content.innerHTML = `
-          <div class="coding-section">
-            <h2>Coding Practice</h2>
-            <p class="muted">No coding sessions logged yet.</p>
-            
-            <div class="session-timer">
-              <h3>Start a Session</h3>
-              <input type="text" id="session-problem" placeholder="Problem link or title" style="width: 100%; margin-bottom: 0.5rem;">
-              <select id="session-platform" style="width: 100%; margin-bottom: 0.5rem;">
-                <option value="leetcode">LeetCode</option>
-                <option value="gfg">GeeksforGeeks</option>
-                <option value="codeforces">Codeforces</option>
-              </select>
-              <button id="btn-log-session" class="btn">Log Session</button>
-            </div>
-            
-            <div class="platform-info">
-              <h4>Platform Sync</h4>
-              <button id="btn-sync-leetcode" class="btn">Sync LeetCode</button>
-              <button id="btn-sync-gfg" class="btn">Sync GFG</button>
-              <button id="btn-sync-codeforces" class="btn">Sync Codeforces</button>
-            </div>
-          </div>
-        `;
-        bindCodingButtons();
-        return;
-      }
-
-      const topicResponse = await fetch(`http://127.0.0.1:8000/coding-session/user/${currentUserId}/topic-stats`);
-      const topicStats = await topicResponse.json();
-
-      content.innerHTML = `
-        <div class="coding-section">
-          <h2>Coding Practice</h2>
-          
-          <div class="stats-overview">
-            <div class="stat-card">
-              <span class="stat-number">${stats.total_problems}</span>
-              <span class="stat-label">Problems</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-number">${stats.total_solved}</span>
-              <span class="stat-label">Solved</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-number">${stats.accuracy}%</span>
-              <span class="stat-label">Accuracy</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-number">${stats.streak}</span>
-              <span class="stat-label">Day Streak</span>
-            </div>
-          </div>
-          
-          <div class="session-timer">
-            <h3>Log New Session</h3>
-            <input type="text" id="session-problem" placeholder="Problem link or title" style="width: 100%; margin-bottom: 0.5rem;">
-            <select id="session-platform" style="width: 100%; margin-bottom: 0.5rem;">
-              <option value="leetcode">LeetCode</option>
-              <option value="gfg">GeeksforGeeks</option>
-              <option value="codeforces">Codeforces</option>
-            </select>
-            <input type="number" id="session-duration" placeholder="Duration (minutes)" style="width: 100%; margin-bottom: 0.5rem;">
-            <button id="btn-log-session" class="btn">Log Session</button>
-          </div>
-          
-          <div class="topics-breakdown">
-            <h4>Topic-wise Performance</h4>
-            ${Object.entries(topicStats.topic_stats || {}).map(([topic, data]) => `
-              <div class="topic-row">
-                <span class="topic-name">${topic}</span>
-                <span class="topic-stats">${data.solved}/${data.attempted} (${data.proficiency}%)</span>
-              </div>
-            `).join('')}
-          </div>
-          
-          <div class="platform-stats">
-            <h4>Platform Breakdown</h4>
-            ${Object.entries(stats.problems_by_platform || {}).map(([platform, count]) => `
-              <div class="platform-row">
-                <span class="platform-name">${platform}</span>
-                <span class="platform-count">${count} problems</span>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      `;
-      bindCodingButtons();
-    } catch (error) {
-      content.innerHTML = `
-        <div class="coding-section">
-          <h2>Coding Practice</h2>
-          <p class="error">Failed to load coding stats: ${error.message}</p>
-        </div>
-      `;
-    }
-  }
-
-  function bindCodingButtons() {
-    document.getElementById('btn-log-session')?.addEventListener('click', async () => {
-      const problem = document.getElementById('session-problem').value;
-      const platform = document.getElementById('session-platform').value;
-      const duration = document.getElementById('session-duration')?.value || 30;
-
-      if (!problem) {
-        alert('Please enter a problem name or link');
-        return;
-      }
-
-      try {
-        await fetch('http://127.0.0.1:8000/coding-session/session/log', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: currentUserId,
-            platform: platform,
-            problems_solved: [{
-              platform: platform,
-              problem_id: 'manual',
-              problem_name: problem,
-              topic: 'general',
-              difficulty: 'medium',
-              status: 'accepted',
-              solve_time_minutes: parseInt(duration)
-            }],
-            session_duration_minutes: parseInt(duration),
-            session_type: 'practice'
-          })
-        });
-        renderCodingTab();
-      } catch (error) {
-        alert('Failed to log session: ' + error.message);
-      }
-    });
-
-    document.getElementById('btn-sync-leetcode')?.addEventListener('click', async () => {
-      chrome.storage.local.get('userSettings', async (data) => {
-        const username = data.userSettings?.leetcode_username;
-        if (!username) {
-          alert('Please set your LeetCode username in Settings first');
-          return;
-        }
-
-        try {
-          const response = await fetch('http://127.0.0.1:8000/coding-session/sync/leetcode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              user_id: currentUserId,
-              username: username
-            })
-          });
-          const result = await response.json();
-          
-          if (result.ok) {
-            alert(`Synced LeetCode profile: ${result.total_solved} problems solved (E: ${result.easy}, M: ${result.medium}, H: ${result.hard})`);
-            renderCodingTab();
-          } else {
-            alert('Sync failed: ' + (result.error || result.message));
-          }
-        } catch (error) {
-          alert('Failed to sync LeetCode: ' + error.message);
-        }
-      });
-    });
-
-    document.getElementById('btn-sync-gfg')?.addEventListener('click', async () => {
-      chrome.storage.local.get('userSettings', async (data) => {
-        const username = data.userSettings?.gfg_username;
-        if (!username) {
-          alert('Please set your GFG username in Settings first');
-          return;
-        }
-
-        try {
-          const response = await fetch('http://127.0.0.1:8000/coding-session/sync/gfg', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              user_id: currentUserId,
-              username: username
-            })
-          });
-          const result = await response.json();
-          
-          if (result.ok) {
-            alert(`Synced GFG profile: ${result.problems_solved} problems solved, Coding Score: ${result.coding_score}`);
-            renderCodingTab();
-          } else {
-            alert('Sync failed: ' + (result.error || result.message));
-          }
-        } catch (error) {
-          alert('Failed to sync GFG: ' + error.message);
-        }
-      });
-    });
-
-    document.getElementById('btn-sync-codeforces')?.addEventListener('click', async () => {
-      chrome.storage.local.get('userSettings', async (data) => {
-        const username = data.userSettings?.codeforces_username;
-        if (!username) {
-          alert('Please set your Codeforces username in Settings first');
-          return;
-        }
-
-        try {
-          const response = await fetch('http://127.0.0.1:8000/coding-session/sync/codeforces', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              user_id: currentUserId,
-              username: username
-            })
-          });
-          const result = await response.json();
-          
-          if (result.ok) {
-            alert(`Synced Codeforces profile: Rating ${result.rating}, Max: ${result.max_rating}, ${result.total_problems_solved} problems solved`);
-            renderCodingTab();
-          } else {
-            alert('Sync failed: ' + (result.error || result.message));
-          }
-        } catch (error) {
-          alert('Failed to sync Codeforces: ' + error.message);
-        }
-      });
-    });
-  }
-
-  // ---------- Applications Tab (Auto-update only) ----------
-  async function renderApplicationsTab() {
-    content.innerHTML = '<p class="loading">Loading applications (auto-synced)...';
-
-    try {
-      const [appsResponse, analyticsResponse, pipelineResponse] = await Promise.all([
-        fetch(`http://127.0.0.1:8000/applications/user/${currentUserId}/applications`),
-        fetch(`http://127.0.0.1:8000/applications/user/${currentUserId}/analytics`),
-        fetch(`http://127.0.0.1:8000/applications/user/${currentUserId}/pipeline`)
-      ]);
-
-      const apps = await appsResponse.json();
-      const analytics = await analyticsResponse.json();
-      const pipeline = await pipelineResponse.json();
-
-      content.innerHTML = `
-        <div class="applications">
-          <h2>📋 Application Tracking</h2>
-          <p class="muted">Applications are auto-synced from your job analysis history</p>
-          
-          <div class="pipeline-chart">
-            <div class="stage applied">
-              <span class="count">${pipeline.pipeline?.applied?.length || 0}</span>
-              <span class="label">Applied</span>
-            </div>
-            <div class="arrow">→</div>
-            <div class="stage shortlisted">
-              <span class="count">${pipeline.pipeline?.shortlisted?.length || 0}</span>
-              <span class="label">Shortlisted</span>
-            </div>
-            <div class="arrow">→</div>
-            <div class="stage interviewed">
-              <span class="count">${pipeline.pipeline?.interviewed?.length || 0}</span>
-              <span class="label">Interview</span>
-            </div>
-            <div class="arrow">→</div>
-            <div class="stage offered">
-              <span class="count">${pipeline.pipeline?.offered?.length || 0}</span>
-              <span class="label">Offer</span>
-            </div>
-          </div>
-          
-          <div class="applications-list">
-            <h3>Recent Applications</h3>
-            ${(apps.applications || []).slice(0, 10).map(app => `
-              <div class="application-card">
-                <div class="status ${app.status}">${app.status}</div>
-                <div class="details">
-                  <h4>${app.job_title}</h4>
-                  <p class="company">${app.company}</p>
-                  <p class="date">Applied: ${new Date(app.application_date).toLocaleDateString()}</p>
-                  ${app.interview_date ? `<p class="interview-date">Interview: ${new Date(app.interview_date).toLocaleDateString()}</p>` : ''}
-                  ${app.match_score ? `<p class="match-score">Match: ${app.match_score}%</p>` : ''}
-                </div>
-                <div class="actions">
-                  <select onchange="updateApplicationStatus(${app.id}, this.value)">
-                    <option value="applied" ${app.status === 'applied' ? 'selected' : ''}>Applied</option>
-                    <option value="shortlisted" ${app.status === 'shortlisted' ? 'selected' : ''}>Shortlisted</option>
-                    <option value="interviewed" ${app.status === 'interviewed' ? 'selected' : ''}>Interview</option>
-                    <option value="offered" ${app.status === 'offered' ? 'selected' : ''}>Offer</option>
-                    <option value="rejected" ${app.status === 'rejected' ? 'selected' : ''}>Rejected</option>
-                  </select>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-          
-          <div class="analytics">
-            <h3>📊 Statistics</h3>
-            <div class="stats-grid">
-              <div class="stat">
-                <span class="number">${analytics.total_applications || 0}</span>
-                <span class="label">Total Applications</span>
-              </div>
-              <div class="stat">
-                <span class="number">${analytics.success_rate || 0}%</span>
-                <span class="label">Success Rate</span>
-              </div>
-              <div class="stat">
-                <span class="number">${analytics.interview_stage_count || 0}</span>
-                <span class="label">Interviews</span>
-              </div>
-              <div class="stat">
-                <span class="number">${analytics.offers || 0}</span>
-                <span class="label">Offers</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-    } catch (error) {
-      content.innerHTML = `
-        <div class="applications">
-          <h2>📋 Application Tracking</h2>
-          <p class="error">Failed to load applications: ${error.message}</p>
-        </div>
-      `;
-    }
-  }
-
-  window.updateApplicationStatus = async (appId, newStatus) => {
-    try {
-      await fetch(`http://127.0.0.1:8000/applications/update/${appId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: currentUserId,
-          application_id: appId,
-          new_status: newStatus
-        })
-      });
-      renderApplicationsTab();
-    } catch (error) {
-      alert('Failed to update status: ' + error.message);
-    }
-  };
-
-  // ---------- Settings Tab ----------
-  async function renderSettingsTab() {
-    chrome.storage.local.get(['userSettings'], (data) => {
-      const settings = data.userSettings || {
-        resume_url: '',
-        github_username: '',
-        leetcode_username: '',
-        gfg_username: '',
-        codeforces_username: ''
       };
-
-      content.innerHTML = `
-        <div class="settings-section">
-          <h2>⚙️ Settings</h2>
-          
-          <div class="settings-group">
-            <h3>Profile</h3>
-            <div class="setting-item">
-              <label>Resume URL (Google Drive, etc.)</label>
-              <input type="url" id="setting-resume" value="${settings.resume_url || ''}" placeholder="https://docs.google.com/document/..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-            </div>
-          </div>
-          
-          <div class="settings-group">
-            <h3>Coding Platforms</h3>
-            <div class="setting-item">
-              <label>GitHub Username</label>
-              <div style="display: flex; gap: 8px;">
-                <input type="text" id="setting-github" value="${settings.github_username || ''}" placeholder="your-username" style="flex: 1; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-                <button id="btn-sync-github" class="btn" style="margin: 0;">Sync</button>
-              </div>
-            </div>
-            <div class="setting-item">
-              <label>LeetCode Username</label>
-              <input type="text" id="setting-leetcode" value="${settings.leetcode_username || ''}" placeholder="your-username" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-            </div>
-            <div class="setting-item">
-              <label>GeeksforGeeks Username</label>
-              <input type="text" id="setting-gfg" value="${settings.gfg_username || ''}" placeholder="your-username" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-            </div>
-            <div class="setting-item">
-              <label>Codeforces Username</label>
-              <input type="text" id="setting-codeforces" value="${settings.codeforces_username || ''}" placeholder="your-username" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-            </div>
-          </div>
-          
-          <button id="btn-save-settings" class="btn">Save Settings</button>
-          <p class="muted" style="margin-top: 8px;">These settings will be used to sync your coding stats and profile data.</p>
-        </div>
-      `;
-
-      document.getElementById('btn-save-settings')?.addEventListener('click', () => {
-        const newSettings = {
-          resume_url: document.getElementById('setting-resume').value,
-          github_username: document.getElementById('setting-github').value,
-          leetcode_username: document.getElementById('setting-leetcode').value,
-          gfg_username: document.getElementById('setting-gfg').value,
-          codeforces_username: document.getElementById('setting-codeforces').value
-        };
-        chrome.storage.local.set({ userSettings: newSettings }, () => {
-          alert('Settings saved successfully!');
-        });
-      });
-
-      document.getElementById('btn-sync-github')?.addEventListener('click', async () => {
-        const username = document.getElementById('setting-github').value;
-        if (!username) {
-          alert('Please enter a GitHub username first');
-          return;
-        }
-
-        try {
-          const response = await fetch(`http://127.0.0.1:8000/github/profile/${username}`);
-          const result = await response.json();
-          
-          if (result.error) {
-            alert('GitHub sync failed: ' + result.error);
-          } else {
-            alert(`GitHub profile synced: ${result.public_repos} repos, ${result.followers} followers`);
-          }
-        } catch (error) {
-          alert('Failed to sync GitHub: ' + error.message);
-        }
-      });
     });
   }
 
-  // ---------- Tab Rendering ----------
-  function renderActiveTab() {
-    switch (activeTab) {
-      case 'Job':
-        chrome.storage.local.get('lastJobAnalysis', (data) => {
-          renderJobTab(data.lastJobAnalysis || null, null);
-        });
-        break;
-      case 'Company':
-        renderCompanyTab();
-        break;
-      case 'Coding':
-        renderCodingTab();
-        break;
-      case 'Applications':
-        renderApplicationsTab();
-        break;
-      case 'Settings':
-        renderSettingsTab();
-        break;
-      default:
-        content.innerHTML = '<p>Select a tab to view details.</p>';
+  async function renderCompany() {
+    const data = await getStore();
+    const last = data.liveAnalysis;
+    const payload = data.liveJobData || {};
+    if (!last) {
+      content.innerHTML = `${emptyBlock("Company", "Analyze a job page first. Insights come from that page, not a generic company template.")}
+        <button id="btn-analyse" class="btn">Analyze this page</button>`;
+      bindAnalyse(() => renderCompany());
+      return;
     }
+    content.innerHTML = `<p class="muted">Reading company facts from the last analyzed page…</p>`;
+    try {
+      const res = await fetch("http://127.0.0.1:8000/company/from-page", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_name: last.company,
+          job_title: last.title,
+          jd: payload.jd || "",
+          location: last.location || payload.location || "",
+          page_url: last.page_url || payload.source || "",
+        }),
+      });
+      const info = await res.json();
+      content.innerHTML = `
+        <h2>Company</h2>
+        <div class="card">
+          <h3>${escapeHtml(info.name)}</h3>
+          <p>${escapeHtml(info.job_title || "")}</p>
+          <p class="muted">${escapeHtml(info.note || "")}</p>
+        </div>
+        <div class="card">
+          <h3>From this posting</h3>
+          <p>Location: ${escapeHtml((info.locations || []).join(", ") || "Not stated on page")}</p>
+          <p>Skills on this JD:</p>
+          ${tags(info.tech_stack, "mandatory")}
+        </div>
+        <div class="card">
+          <h3>Salary / leadership</h3>
+          <p class="muted">Not filled from static data. Add a salary API or confirm a source later.</p>
+        </div>
+        <button id="btn-analyse" class="btn">Re-read current page</button>
+      `;
+      bindAnalyse(() => renderCompany());
+    } catch (err) {
+      content.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  async function renderCoding() {
+    const data = await getStore();
+    const handles = data.codingHandles || {};
+    content.innerHTML = `
+      <h2>Coding</h2>
+      ${emptyBlock("Live session", "Open a LeetCode / GFG / Codeforces problem. Session tracking uses the page, not fake stats.")}
+      ${emptyBlock("Platform stats", "Sync needs your public handle in Settings. We will not invent solved-count numbers.")}
+      <div class="card">
+        <h3>Handles saved</h3>
+        <p>LeetCode: ${escapeHtml(handles.leetcode || "—")}</p>
+        <p>GFG: ${escapeHtml(handles.gfg || "—")}</p>
+        <p>Codeforces: ${escapeHtml(handles.codeforces || "—")}</p>
+      </div>
+    `;
+  }
+
+  async function renderSettings() {
+    const data = await getStore();
+    const profile = data.profile || {};
+    const skills = data.userSkills || [];
+    const handles = data.codingHandles || {};
+    content.innerHTML = `
+      <h2>Settings / Profile</h2>
+      <div class="card">
+        <h3>Account</h3>
+        <p>${escapeHtml(profile.name || "")} ${escapeHtml(profile.email || "")}</p>
+        <button id="btn-signout" class="btn">Sign out</button>
+      </div>
+      <div class="card">
+        <h3>Resume</h3>
+        <input id="resume-file" type="file" accept=".pdf,.docx,.txt">
+        <button id="btn-upload-resume" class="btn">Upload resume</button>
+        <textarea id="resume-text" rows="6" placeholder="Or paste resume text">${escapeHtml(data.resumeText || "")}</textarea>
+        <button id="btn-save-resume" class="btn">Save pasted text</button>
+        <button id="btn-ats" class="btn">ATS check vs current job page</button>
+        <pre id="ats-out" class="muted"></pre>
+      </div>
+      <div class="card">
+        <h3>Technical skills</h3>
+        <textarea id="skills-text" rows="4" placeholder="Comma-separated, e.g. Python, SQL, Java">${escapeHtml(skills.map((s) => s.name).join(", "))}</textarea>
+        <button id="btn-save-skills" class="btn">Save skills</button>
+      </div>
+      <div class="card">
+        <h3>Coding handles</h3>
+        <label>LeetCode <input id="h-lc" value="${escapeHtml(handles.leetcode || "")}"></label>
+        <label>GFG <input id="h-gfg" value="${escapeHtml(handles.gfg || "")}"></label>
+        <label>Codeforces <input id="h-cf" value="${escapeHtml(handles.codeforces || "")}"></label>
+        <button id="btn-save-handles" class="btn">Save handles</button>
+        <p class="muted">Live platform sync is not enabled until you approve each site's public API/ToS approach.</p>
+      </div>
+    `;
+    document.getElementById("redirect-uri").textContent = chrome.identity.getRedirectURL();
+    document.getElementById("btn-save-google").onclick = async () => {
+      await chrome.storage.local.set({ googleClientId: document.getElementById("google-client-id").value.trim() });
+      alert("Client ID saved. Go to Home and click Sign in with Google.");
+    };
+    document.getElementById("btn-signout").onclick = async () => {
+      await chrome.storage.local.set({ profile: { name: "", email: "", signedIn: false } });
+      welcomeEl.textContent = "";
+      renderActiveTab();
+    };
+    document.getElementById("btn-upload-resume").onclick = async () => {
+      const file = document.getElementById("resume-file").files[0];
+      if (!file) {
+        alert("Choose a PDF, DOCX, or TXT file first.");
+        return;
+      }
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("http://127.0.0.1:8000/user/resume/upload", { method: "POST", body: form });
+      const out = await res.json();
+      if (!res.ok) {
+        document.getElementById("ats-out").textContent = out.detail || JSON.stringify(out);
+        return;
+      }
+      document.getElementById("resume-text").value = out.resume_text;
+      await chrome.storage.local.set({ resumeText: out.resume_text, resumeFilename: out.filename });
+      document.getElementById("ats-out").textContent = `Uploaded ${out.filename} (${out.chars} characters).`;
+    };
+    document.getElementById("btn-save-resume").onclick = async () => {
+      await chrome.storage.local.set({ resumeText: document.getElementById("resume-text").value });
+    };
+    document.getElementById("btn-save-skills").onclick = async () => {
+      const names = document
+        .getElementById("skills-text")
+        .value.split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      await chrome.storage.local.set({
+        userSkills: names.map((name) => ({ name, level: "moderate", duration_bucket: null })),
+      });
+    };
+    document.getElementById("btn-save-handles").onclick = async () => {
+      await chrome.storage.local.set({
+        codingHandles: {
+          leetcode: document.getElementById("h-lc").value.trim(),
+          gfg: document.getElementById("h-gfg").value.trim(),
+          codeforces: document.getElementById("h-cf").value.trim(),
+        },
+      });
+    };
+    document.getElementById("btn-ats").onclick = async () => {
+      const last = data.liveAnalysis;
+      const resume = document.getElementById("resume-text").value;
+      if (!resume) {
+        document.getElementById("ats-out").textContent = "Upload or paste resume text first.";
+        return;
+      }
+      const res = await fetch("http://127.0.0.1:8000/user/resume/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resume_text: resume,
+          jd_text: (data.liveJobData && data.liveJobData.jd) || "",
+          mandatory_skills: last?.mandatory_skills || [],
+          nice_to_have_skills: last?.nice_to_have_skills || [],
+        }),
+      });
+      const out = await res.json();
+      document.getElementById("ats-out").textContent = JSON.stringify(out, null, 2);
+    };
+  }
+
+  function renderActiveTab() {
+    chrome.storage.local.get("profile", (data) => {
+      const p = data.profile || {};
+      welcomeEl.textContent = p.signedIn ? `Welcome ${p.name}` : "";
+    });
+    if (activeTab === "Home") return renderHome();
+    if (activeTab === "Job") return renderJob();
+    if (activeTab === "Company") return renderCompany();
+    if (activeTab === "Coding") return renderCoding();
+    if (activeTab === "Settings") return renderSettings();
   }
 
   tabs.forEach((tab) => {
-    tab.addEventListener('click', () => {
-      tabs.forEach((t) => t.classList.remove('active'));
-      tab.classList.add('active');
-      activeTab = tab.innerText;
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      activeTab = tab.dataset.tab;
       renderActiveTab();
     });
   });
 
-  tabs[0].classList.add('active');
+  chrome.storage.local.remove(["lastJobAnalysis", "lastJobData"]);
   renderActiveTab();
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local') return;
-    if (changes.lastJobAnalysis && activeTab === 'Job') {
-      renderJobTab(changes.lastJobAnalysis.newValue, null);
-    }
-  });
-
-  fetch('http://127.0.0.1:8000/health')
+  fetch("http://127.0.0.1:8000/health")
     .then((res) => res.json())
     .then((data) => {
       statusEl.textContent = `Backend: ${data.status}, DB: ${data.database}`;
     })
     .catch(() => {
-      statusEl.textContent = 'Backend: offline — run scripts/start-backend.ps1';
+      statusEl.textContent = "Backend: offline — run scripts/start-backend.ps1";
     });
 });

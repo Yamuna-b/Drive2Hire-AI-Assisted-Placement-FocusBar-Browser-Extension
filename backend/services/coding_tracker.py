@@ -5,61 +5,8 @@ from sqlalchemy import select
 from backend.db.database import AsyncSessionLocal
 
 # In-memory storage fallback when DB is not configured
-_CODING_SESSIONS: List[Dict[str, Any]] = [
-    {
-        "id": 1,
-        "user_id": 1,
-        "platform": "LeetCode",
-        "problem_id": "two-sum",
-        "problem_title": "Two Sum",
-        "difficulty": "Easy",
-        "topics": ["Arrays", "Hash Table"],
-        "duration_seconds": 900,
-        "solved": True,
-        "created_at": datetime.utcnow().isoformat()
-    },
-    {
-        "id": 2,
-        "user_id": 1,
-        "platform": "LeetCode",
-        "problem_id": "lru-cache",
-        "problem_title": "LRU Cache",
-        "difficulty": "Medium",
-        "topics": ["Hash Table", "Linked List", "Design"],
-        "duration_seconds": 1800,
-        "solved": True,
-        "created_at": datetime.utcnow().isoformat()
-    },
-    {
-        "id": 3,
-        "user_id": 1,
-        "platform": "GeeksforGeeks",
-        "problem_id": "binary-tree-inorder-traversal",
-        "problem_title": "Inorder Traversal",
-        "difficulty": "Easy",
-        "topics": ["Trees", "Binary Tree", "DFS"],
-        "duration_seconds": 1200,
-        "solved": True,
-        "created_at": datetime.utcnow().isoformat()
-    }
-]
-
-_ACCOUNT_SYNCS: Dict[str, Dict[str, Any]] = {
-    "leetcode": {
-        "platform": "LeetCode",
-        "handle": "student_coder",
-        "total_solved": 45,
-        "topic_breakdown": {
-            "Arrays": 15,
-            "Strings": 10,
-            "Trees": 8,
-            "Linked List": 6,
-            "Dynamic Programming": 4,
-            "Hash Table": 12
-        },
-        "last_synced_at": datetime.utcnow().isoformat()
-    }
-}
+_CODING_SESSIONS: List[Dict[str, Any]] = []
+_ACCOUNT_SYNCS: Dict[str, Dict[str, Any]] = {}
 
 
 def log_session_memory(session_data: dict) -> dict:

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Placement FocusBar",
-  "version": "0.2.3",
+  "version": "0.3.2",
   "description": "Helps engineering students prepare for placements.",
   "icons": {
     "16": "icons/icon16.png",
@@ -17,17 +17,30 @@
   "background": {
     "service_worker": "background/service-worker.js"
   },
-  "permissions": ["sidePanel", "storage", "activeTab", "scripting", "tabs"],
+  "permissions": ["sidePanel", "storage", "activeTab", "scripting", "tabs", "identity"],
+  "oauth2": {
+    "client_id": "758501915824-n03vtotgp025jc2gmn7hnsg5gh6lik0k.apps.googleusercontent.com",
+    "scopes": [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
   "host_permissions": [
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*",
+    "https://accounts.google.com/*",
+    "https://www.googleapis.com/*",
+    "https://oauth2.googleapis.com/*",
     "https://*/*",
     "http://*/*"
   ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content-scripts/universal-parser.js", "content-scripts/job-page-parser.js", "content-scripts/coding-page-parser.js"],
+      "js": ["content-scripts/coding-page-parser.js"],
       "run_at": "document_idle"
     }
   ]

@@ -2,15 +2,64 @@ import json
 import re
 from pathlib import Path
 
-MANDATORY_HEADING_PATTERNS = [
-    r"\b(required|must have|must-have|mandatory|minimum qualifications?|essential|key requirements?|qualifications?|requirements?|what you.ll need|what we.re looking for)\b",
-]
+EMPTY_SKILL_VALUES = {"", "na", "n/a", "n.a.", "none", "nil", "-", "--", "not applicable"}
 
-NICE_TO_HAVE_HEADING_PATTERNS = [
-    r"\b(nice to have|nice-to-have|preferred|bonus|good to have|optional|plus points?|desirable|would be a plus)\b",
-]
+LABELED_MANDATORY = re.compile(
+    r"(?im)^\s*(?:must\s*have(?:\s+skills?)?|required(?:\s+skills?)?|mandatory(?:\s+skills?)?|"
+    r"key\s+skills?|minimum\s+qualifications?)\s*[:\-]\s*(.+)$"
+)
+LABELED_NICE = re.compile(
+    r"(?im)^\s*(?:good\s+to\s+have(?:\s+skills?)?|nice\s+to\s+have(?:\s+skills?)?|"
+    r"preferred(?:\s+skills?)?|optional(?:\s+skills?)?)\s*[:\-]\s*(.+)$"
+)
+EXPERIENCE_LINE = re.compile(
+    r"(?i)minimum\s+(\d+)\s*year\(s\)?\s+of\s+experience|"
+    r"(\d+)\+?\s*years?\s+of\s+(?:proven\s+)?experience|"
+    r"minimum\s+of\s+(\d+)\s+years?"
+)
+EDUCATION_LINE = re.compile(
+    r"(?im)educational\s+qualification\s*[:\-]\s*(.+)$|"
+    r"(\d+)\s+years?\s+(?:of\s+)?full\s+time\s+education"
+)
 
-_SKILLS_CACHE = None
+JUNK_PHRASE = re.compile(
+    r"(?i)easy apply|actively hiring|see more|show more|promoted|save job|"
+    r"^save$|^apply$|clicked apply|people clicked|reposted|messages|notifications|"
+    r"account executive|client executive|business systems analyst"
+)
+
+GENERIC_UNLESS_LABELED = {
+    "accessibility",
+    "frontend development",
+    "backend development",
+    "full stack development",
+    "web development",
+    "infrastructure",
+    "data analytics",
+    "data science",
+    "machine learning",
+    "performance",
+    "monitoring",
+    "logging",
+    "networking",
+    "compliance",
+    "requirements analysis",
+    "business analysis",
+    "mobile development",
+}
+
+SHORT_ALIAS_SKIP = {"ai", "ml", "ui", "cv", "bi", "r"}
+
+
+def _is_junk_phrase(phrase: str) -> bool:
+    p = (phrase or "").strip()
+    if len(p) < 2 or len(p) > 60:
+        return True
+    if JUNK_PHRASE.search(p):
+        return True
+    if p.lower() in {"applications", "actively", "bengaluru", "bangalore", "corporation", "india"}:
+        return True
+    return False
 
 
 def _load_skills_config():
@@ -24,202 +73,147 @@ def _load_skills_config():
 
     entries = []
     for item in data.get("skills", []):
-        names = [item["name"]] + item.get("aliases", [])
-        entries.append({"canonical": item["name"], "terms": [n.lower() for n in names]})
+        names = [item["name"]] + [a for a in item.get("aliases", []) if a.lower() != "spring"]
+        terms = sorted({n.lower() for n in names if n}, key=len, reverse=True)
+        entries.append({"canonical": item["name"], "terms": terms})
 
+    entries.sort(key=lambda e: max((len(t) for t in e["terms"]), default=0), reverse=True)
     _SKILLS_CACHE = entries
     return entries
 
 
 def _normalize_whitespace(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", text or "").strip()
 
 
-def _split_jd_sections(jd_text: str) -> dict:
-    """Split JD into mandatory, nice-to-have, and other sections using heading heuristics."""
-    lines = jd_text.splitlines()
-    sections = {"mandatory": [], "nice_to_have": [], "other": []}
-    current = "other"
-
-    heading_re = re.compile(
-        r"^[\s\*\-•]*([A-Za-z0-9][A-Za-z0-9\s/\&\-]{2,60})\s*:?\s*$"
-    )
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
+def _split_skill_list(raw: str) -> list:
+    raw = _normalize_whitespace(raw)
+    if raw.lower() in EMPTY_SKILL_VALUES:
+        return []
+    parts = re.split(r"[,;/|]|\\band\\b", raw, flags=re.I)
+    cleaned = []
+    for part in parts:
+        value = _normalize_whitespace(part)
+        if value.lower() in EMPTY_SKILL_VALUES or len(value) < 2:
             continue
-
-        lower = stripped.lower()
-        is_heading = bool(heading_re.match(stripped)) and len(stripped) < 80
-
-        if is_heading:
-            if any(re.search(p, lower) for p in MANDATORY_HEADING_PATTERNS):
-                current = "mandatory"
-                continue
-            if any(re.search(p, lower) for p in NICE_TO_HAVE_HEADING_PATTERNS):
-                current = "nice_to_have"
-                continue
-
-        sections[current].append(stripped)
-
-    return {
-        key: _normalize_whitespace("\n".join(value))
-        for key, value in sections.items()
-    }
+        cleaned.append(value)
+    return cleaned
 
 
-def _extract_skill_with_duration(text: str) -> list:
-    """Return list of dicts with skill name and optional duration.
-    Recognises patterns like '2+ years Docker' or 'Docker (2+ years)'.
-    """
-    results = []
-    # Simple pattern: duration followed by skill name
-    pattern1 = re.compile(r"(?P<duration>\d+\+?\s*years?)\s+(?P<skill>[A-Za-z][A-Za-z0-9+\-#]*)", re.IGNORECASE)
-    # Alternate: skill name followed by duration in parentheses
-    pattern2 = re.compile(r"(?P<skill>[A-Za-z][A-Za-z0-9+\-#]*)\s*\((?P<duration>\d+\+?\s*years?)\)", re.IGNORECASE)
-
-    for match in pattern1.finditer(text):
-        results.append({"name": match.group("skill"), "duration": match.group("duration")})
-    for match in pattern2.finditer(text):
-        results.append({"name": match.group("skill"), "duration": match.group("duration")})
-    return results
+def _match_known_skill(phrase: str, skills_config: list) -> str | None:
+    lower = phrase.lower().strip()
+    for entry in skills_config:
+        for term in entry["terms"]:
+            if lower == term or lower.replace(" ", "") == term.replace(" ", ""):
+                return entry["canonical"]
+            escaped = re.escape(term).replace(r"\ ", r"\s+")
+            if re.search(r"\b" + escaped + r"\b", lower):
+                return entry["canonical"]
+    return None
 
 
 def _find_skills_in_text(text: str, skills_config: list) -> list:
     if not text:
         return []
-
     lower_text = text.lower()
     found = []
     seen = set()
-
     for entry in skills_config:
         canonical = entry["canonical"]
         if canonical in seen:
             continue
-
         for term in entry["terms"]:
-            # Build a proper regex: word-boundary + escaped term (multi-word terms allow \s+) + word-boundary
+            if term in SHORT_ALIAS_SKIP or len(term) < 4:
+                if term not in {"java", "sql", "git", "aws", "css", "php", "gcp", "c++", "c#", ".net"}:
+                    continue
             escaped = re.escape(term).replace(r"\ ", r"\s+")
-            pattern = r"\b" + escaped + r"\b"
-            if re.search(pattern, lower_text):
+            if re.search(r"\b" + escaped + r"\b", lower_text):
                 found.append(canonical)
                 seen.add(canonical)
                 break
     return found
 
 
-def _extract_unknown_skills(text: str) -> list:
-    """Extract potential skill names that aren't in our database.
-    Looks for capitalized words/phrases that appear technical."""
-    if not text:
-        return []
-    
-    # Remove common non-skill words
-    common_words = {
-        'the', 'and', 'or', 'is', 'are', 'be', 'to', 'for', 'in', 'of', 'on', 'at',
-        'by', 'from', 'with', 'as', 'a', 'an', 'that', 'this', 'it', 'if', 'we',
-        'you', 'your', 'our', 'their', 'other', 'any', 'all', 'these', 'those',
-        'year', 'years', 'experience', 'knowledge', 'understanding', 'skills',
-        'must', 'should', 'could', 'can', 'may', 'will', 'would', 'have', 'has',
-        'do', 'does', 'job', 'role', 'position', 'requirement', 'requirements',
-        'qualifications', 'qualification', 'responsibility', 'responsibilities',
-        'day', 'days', 'month', 'months', 'week', 'weeks', 'able', 'willing',
-        'people', 'person', 'company', 'team', 'project', 'work', 'working',
-        'working', 'develop', 'development', 'technical', 'technology', 'software'
+def _labeled_skills(jd_text: str, skills_config: list) -> tuple[list, list]:
+    mandatory = []
+    nice = []
+    seen_m, seen_n = set(), set()
+
+    def add(bucket, seen, phrase):
+        if _is_junk_phrase(phrase):
+            return
+        known = _match_known_skill(phrase, skills_config)
+        name = known or phrase
+        key = name.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        bucket.append({"name": name, "duration": None, "source": "labeled"})
+
+    for match in LABELED_MANDATORY.finditer(jd_text or ""):
+        for phrase in _split_skill_list(match.group(1)):
+            add(mandatory, seen_m, phrase)
+    for match in LABELED_NICE.finditer(jd_text or ""):
+        for phrase in _split_skill_list(match.group(1)):
+            add(nice, seen_n, phrase)
+    return mandatory, nice
+
+
+def _extract_experience(jd_text: str) -> dict:
+    years = None
+    skill_focus = None
+    edu = None
+    for match in EXPERIENCE_LINE.finditer(jd_text or ""):
+        years = next((g for g in match.groups() if g), years)
+    edu_match = EDUCATION_LINE.search(jd_text or "")
+    if edu_match:
+        edu = _normalize_whitespace(next((g for g in edu_match.groups() if g), "") or edu_match.group(0))
+    focus = re.search(
+        r"(?i)experience in ([A-Za-z0-9 .+\-]+?)(?:\.|$)",
+        jd_text or "",
+    )
+    if focus:
+        skill_focus = _normalize_whitespace(focus.group(1))
+    return {
+        "minimum_years": int(years) if years else None,
+        "focus_skill": skill_focus,
+        "education": edu,
     }
-    
-    # Extract capitalized sequences and hyphenated terms
-    patterns = [
-        r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b',  # Capitalized phrases
-        r'\b([A-Z]+(?:[+\-][A-Z]+)*)\b',  # Acronyms like C++, C#
-        r'\b([a-z]+(?:\+\+|#|\.js|\.py)?)\b',  # Language/framework names
-    ]
-    
-    found = set()
-    text_lower = text.lower()
-    
-    for pattern in patterns:
-        for match in re.finditer(pattern, text):
-            term = match.group(1).strip()
-            term_lower = term.lower()
-            
-            # Skip if it's a common word or too short
-            if term_lower in common_words or len(term) < 2:
-                continue
-            
-            # Skip if already in our known skills
-            if term_lower in text_lower and term not in found:
-                found.add(term)
-    
-    # Filter out very common words that slipped through
-    filtered = [term for term in found if term.lower() not in common_words]
-    return sorted(list(filtered))[:15]  # Return top 15 extracted skills
 
 
 def parse_jd(jd_text: str) -> dict:
-    """Extract mandatory and nice‑to‑have skills from a job description, preserving any detected duration constraints."""
+    """Extract mandatory / nice-to-have skills from the actual JD text."""
     skills_config = _load_skills_config()
-    sections = _split_jd_sections(jd_text or "")
+    text = jd_text or ""
+    mandatory_objs, nice_objs = _labeled_skills(text, skills_config)
 
-    # Base skill names
-    mandatory = _find_skills_in_text(sections["mandatory"], skills_config)
-    nice_to_have = _find_skills_in_text(sections["nice_to_have"], skills_config)
+    labeled_names = {s["name"].lower() for s in mandatory_objs + nice_objs}
 
-    # Extract skill + duration pairs from each section
-    def enrich(skills_list, section_text):
-        enriched = []
-        duration_hits = _extract_skill_with_duration(section_text)
-        duration_map = {hit["name"].lower(): hit["duration"] for hit in duration_hits}
-        for name in skills_list:
-            dur = duration_map.get(name.lower())
-            enriched.append({"name": name, "duration": dur})
-        return enriched
+    # Extra known skills from the rest of the JD (never invent stacks like Spring Boot).
+    body_skills = _find_skills_in_text(text, skills_config)
+    for name in body_skills:
+        if name.lower() in labeled_names:
+            continue
+        if name.lower() in GENERIC_UNLESS_LABELED:
+            continue
+        if any(s["name"].lower() == name.lower() for s in mandatory_objs + nice_objs):
+            continue
+        if not mandatory_objs:
+            mandatory_objs.append({"name": name, "duration": None, "source": "body"})
+        else:
+            if name not in [s["name"] for s in nice_objs]:
+                nice_objs.append({"name": name, "duration": None, "source": "body"})
 
-    mandatory_objs = enrich(mandatory, sections["mandatory"])
-    nice_objs = enrich(nice_to_have, sections["nice_to_have"]) 
-
-    # Fallback: look for any skill mentions outside labelled sections and treat as mandatory
-    fallback = _find_skills_in_text(sections["other"], skills_config)
-    for name in fallback:
-        if name not in mandatory and name not in nice_to_have:
-            mandatory_objs.append({"name": name, "duration": None})
-            mandatory.append(name)
-
-    # If nothing detected, fallback to scanning whole JD as mandatory
-    if not mandatory and not nice_to_have and jd_text:
-        all_skills = _find_skills_in_text(jd_text, skills_config)
-        mandatory_objs = [{"name": n, "duration": None} for n in all_skills]
-    
-    # Extract unknown domain-specific skills
-    # First try mandatory section, then fallback to whole JD
-    unknown_mandatory = _extract_unknown_skills(sections["mandatory"] or sections["other"] or jd_text)
-    unknown_nice = _extract_unknown_skills(sections["nice_to_have"] or "")
-    
-    # Add unknown skills as "Other Skills" (mark as domain-specific)
-    # Filter out any that match known skills
-    known_skill_names = {s["name"].lower() for s in mandatory_objs} | {s["name"].lower() for s in nice_objs}
-    
-    for skill in unknown_mandatory:
-        if skill.lower() not in known_skill_names:
-            mandatory_objs.append({
-                "name": skill,
-                "duration": None,
-                "is_domain_specific": True,
-                "source": "auto_extracted"
-            })
-            
-    for skill in unknown_nice:
-        if skill.lower() not in known_skill_names:
-            nice_objs.append({
-                "name": skill,
-                "duration": None,
-                "is_domain_specific": True,
-                "source": "auto_extracted"
-            })
+    experience = _extract_experience(text)
+    if experience.get("minimum_years") and mandatory_objs:
+        focus = (experience.get("focus_skill") or "").lower()
+        for item in mandatory_objs:
+            if not focus or item["name"].lower() in focus or focus in item["name"].lower():
+                item["duration"] = f"{experience['minimum_years']}+ years"
 
     return {
         "mandatory_skills": mandatory_objs,
         "nice_to_have_skills": nice_objs,
+        "experience": experience,
+        "source": "page_text",
     }

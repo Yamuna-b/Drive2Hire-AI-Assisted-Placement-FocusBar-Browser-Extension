@@ -83,40 +83,34 @@ async def generate_qa_session(request: QASessionRequest):
     
     gap_skills = []
     
-    # Check mandatory skills for gaps
+    # Check mandatory skills for gaps (missing skill OR duration gap)
     for skill_obj in request.mandatory_skills:
-        skill_name = skill_obj.get('name', '')
-        required_duration = skill_obj.get('duration')
+        skill_name = skill_obj.get('name', '') if isinstance(skill_obj, dict) else str(skill_obj)
+        required_duration = skill_obj.get('duration') if isinstance(skill_obj, dict) else None
         
-        if not required_duration or not skill_name:
+        if not skill_name:
             continue
         
         user_skill = user_skill_map.get(skill_name.lower())
-        
-        # Gap exists if:
-        # 1. User doesn't have the skill, OR
-        # 2. User has it but duration doesn't match requirement
         has_gap = False
         
         if not user_skill:
             has_gap = True
-        elif user_skill.get('duration_bucket'):
-            # Compare duration buckets
-            required = required_duration.lower()
-            user_duration = user_skill['duration_bucket'].lower()
-            
-            # Simple comparison: if required is "2+ years" and user has less, it's a gap
-            if "2+" in required or "3+" in required:
-                if "1 year" in user_duration or "<1" in user_duration:
-                    has_gap = True
-        else:
-            has_gap = True
+        elif required_duration:
+            if user_skill.get('duration_bucket'):
+                required = required_duration.lower()
+                user_duration = user_skill['duration_bucket'].lower()
+                if "2+" in required or "3+" in required:
+                    if "1 year" in user_duration or "<1" in user_duration:
+                        has_gap = True
+            else:
+                has_gap = True
         
         if has_gap:
             questions = generate_qa_questions(skill_name, required_duration or "")
             gap_skills.append({
                 "name": skill_name,
-                "required_duration": required_duration,
+                "required_duration": required_duration or "not specified",
                 "questions": questions
             })
     

@@ -34,7 +34,7 @@
     { "name": "Linux", "aliases": ["unix"] },
     { "name": "CI/CD", "aliases": ["cicd", "continuous integration", "jenkins"] },
     { "name": "Agile", "aliases": ["scrum"] },
-    { "name": "Spring Boot", "aliases": ["spring", "springboot"] },
+    { "name": "Spring Boot", "aliases": ["spring boot", "springboot"] },
     { "name": "FastAPI", "aliases": [] },
     { "name": "Django", "aliases": [] },
     { "name": "Flask", "aliases": [] },
