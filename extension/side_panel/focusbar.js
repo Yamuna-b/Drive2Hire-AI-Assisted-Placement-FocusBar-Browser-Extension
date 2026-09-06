@@ -35,7 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
       "savedJobs",
       "codingHandles",
       "codingSessions",
-      "googleClientId",
+      "codingStats",
     ]);
     const session = await chrome.storage.session.get(["liveAnalysis", "liveJobData"]);
     return { ...local, liveAnalysis: session.liveAnalysis, liveJobData: session.liveJobData };
@@ -93,14 +93,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const saved = data.savedJobs || [];
     const last = data.liveAnalysis;
 
+    const stats = data.codingStats || {};
+    const lc = stats.leetcode || {};
     content.innerHTML = `
       <h2>Home</h2>
       <div class="card">
-        <h3>Today's coding activity</h3>
+        <h3>Coding (live sync)</h3>
         ${
-          sessions.length
-            ? `<p>${sessions.length} session(s) stored from pages you visited.</p>`
-            : `<p class="muted">No coding sessions yet. Open LeetCode / GFG / Codeforces and use the Coding tab.</p>`
+          lc.ok
+            ? `<p>LeetCode @${escapeHtml(lc.handle)}: ${lc.total_solved} solved (Easy ${lc.easy} / Med ${lc.medium} / Hard ${lc.hard})</p>`
+            : `<p class="muted">No live stats yet. Add your public usernames in Settings → Sync now.</p>`
         }
       </div>
       <div class="card">
@@ -331,20 +333,62 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function renderPlatformCard(label, stat) {
+    if (!stat) return `<div class="card"><h3>${label}</h3><p class="muted">No username saved.</p></div>`;
+    if (!stat.ok) return `<div class="card"><h3>${label}</h3><p class="error">${escapeHtml(stat.error || "Sync failed")}</p></div>`;
+    const lines = Object.entries(stat)
+      .filter(([k]) => !["ok", "platform", "source", "error"].includes(k))
+      .map(([k, v]) => `<p>${escapeHtml(k)}: ${escapeHtml(v)}</p>`)
+      .join("");
+    return `<div class="card"><h3>${label}</h3>${lines}<p class="muted">${escapeHtml(stat.source || "")}</p></div>`;
+  }
+
+  async function syncCodingHandles(handles) {
+    const res = await fetch("http://127.0.0.1:8000/coding/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        leetcode: handles.leetcode || "",
+        gfg: handles.gfg || "",
+        codeforces: handles.codeforces || "",
+        hackerrank: handles.hackerrank || "",
+      }),
+    });
+    const out = await res.json();
+    if (out.ok && out.stats) {
+      await chrome.storage.local.set({ codingStats: out.stats, codingSyncedAt: Date.now() });
+    }
+    return out;
+  }
+
   async function renderCoding() {
     const data = await getStore();
     const handles = data.codingHandles || {};
+    const stats = data.codingStats || {};
     content.innerHTML = `
       <h2>Coding</h2>
-      ${emptyBlock("Live session", "Open a LeetCode / GFG / Codeforces problem. Session tracking uses the page, not fake stats.")}
-      ${emptyBlock("Platform stats", "Sync needs your public handle in Settings. We will not invent solved-count numbers.")}
-      <div class="card">
-        <h3>Handles saved</h3>
-        <p>LeetCode: ${escapeHtml(handles.leetcode || "—")}</p>
-        <p>GFG: ${escapeHtml(handles.gfg || "—")}</p>
-        <p>Codeforces: ${escapeHtml(handles.codeforces || "—")}</p>
-      </div>
+      <p class="muted">Live numbers from public profiles. Empty until you save usernames and click Sync.</p>
+      ${renderPlatformCard("LeetCode", stats.leetcode)}
+      ${renderPlatformCard("GeeksforGeeks", stats.gfg)}
+      ${renderPlatformCard("Codeforces", stats.codeforces)}
+      ${renderPlatformCard("HackerRank", stats.hackerrank)}
+      <button id="btn-sync-coding" class="btn">Sync now</button>
+      <p id="sync-msg" class="muted"></p>
     `;
+    document.getElementById("btn-sync-coding").onclick = async () => {
+      const msg = document.getElementById("sync-msg");
+      msg.textContent = "Fetching live stats…";
+      try {
+        const out = await syncCodingHandles(handles);
+        if (!out.ok) {
+          msg.textContent = out.error || "Sync failed. Save usernames in Settings first.";
+          return;
+        }
+        renderCoding();
+      } catch (err) {
+        msg.textContent = "Backend offline? Start scripts/start-backend.ps1 — " + err.message;
+      }
+    };
   }
 
   async function renderSettings() {
@@ -374,19 +418,15 @@ document.addEventListener("DOMContentLoaded", () => {
         <button id="btn-save-skills" class="btn">Save skills</button>
       </div>
       <div class="card">
-        <h3>Coding handles</h3>
+        <h3>Coding usernames</h3>
         <label>LeetCode <input id="h-lc" value="${escapeHtml(handles.leetcode || "")}"></label>
-        <label>GFG <input id="h-gfg" value="${escapeHtml(handles.gfg || "")}"></label>
+        <label>GeeksforGeeks <input id="h-gfg" value="${escapeHtml(handles.gfg || "")}"></label>
         <label>Codeforces <input id="h-cf" value="${escapeHtml(handles.codeforces || "")}"></label>
-        <button id="btn-save-handles" class="btn">Save handles</button>
-        <p class="muted">Live platform sync is not enabled until you approve each site's public API/ToS approach.</p>
+        <label>HackerRank <input id="h-hr" value="${escapeHtml(handles.hackerrank || "")}"></label>
+        <button id="btn-save-handles" class="btn">Save &amp; sync</button>
+        <p id="handle-msg" class="muted">Public usernames only. We fetch live stats — we do not invent counts.</p>
       </div>
     `;
-    document.getElementById("redirect-uri").textContent = chrome.identity.getRedirectURL();
-    document.getElementById("btn-save-google").onclick = async () => {
-      await chrome.storage.local.set({ googleClientId: document.getElementById("google-client-id").value.trim() });
-      alert("Client ID saved. Go to Home and click Sign in with Google.");
-    };
     document.getElementById("btn-signout").onclick = async () => {
       await chrome.storage.local.set({ profile: { name: "", email: "", signedIn: false } });
       welcomeEl.textContent = "";
@@ -424,13 +464,21 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     };
     document.getElementById("btn-save-handles").onclick = async () => {
-      await chrome.storage.local.set({
-        codingHandles: {
-          leetcode: document.getElementById("h-lc").value.trim(),
-          gfg: document.getElementById("h-gfg").value.trim(),
-          codeforces: document.getElementById("h-cf").value.trim(),
-        },
-      });
+      const codingHandles = {
+        leetcode: document.getElementById("h-lc").value.trim(),
+        gfg: document.getElementById("h-gfg").value.trim(),
+        codeforces: document.getElementById("h-cf").value.trim(),
+        hackerrank: document.getElementById("h-hr").value.trim(),
+      };
+      await chrome.storage.local.set({ codingHandles });
+      const msg = document.getElementById("handle-msg");
+      msg.textContent = "Saved. Fetching live stats…";
+      try {
+        const out = await syncCodingHandles(codingHandles);
+        msg.textContent = out.ok ? "Synced. Open the Coding tab to see numbers." : (out.error || "Sync failed");
+      } catch (err) {
+        msg.textContent = "Saved usernames, but backend is offline: " + err.message;
+      }
     };
     document.getElementById("btn-ats").onclick = async () => {
       const last = data.liveAnalysis;
@@ -485,5 +533,5 @@ document.addEventListener("DOMContentLoaded", () => {
     })
     .catch(() => {
       statusEl.textContent = "Backend: offline — run scripts/start-backend.ps1";
-    });
+  });
 });

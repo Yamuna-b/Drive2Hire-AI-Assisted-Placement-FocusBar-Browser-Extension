@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Placement FocusBar",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Helps engineering students prepare for placements.",
   "icons": {
     "16": "icons/icon16.png",
