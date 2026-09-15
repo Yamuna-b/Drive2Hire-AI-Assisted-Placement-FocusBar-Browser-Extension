@@ -30,6 +30,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 async function analyseJob(payload, userSkills) {
+  const stored = await chrome.storage.local.get(["resumeText", "codingStats"]);
   const response = await fetch(`${BACKEND_URL}/job/analyse`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -41,6 +42,8 @@ async function analyseJob(payload, userSkills) {
       work_mode: payload.work_mode || "",
       page_url: payload.source || "",
       user_skills: userSkills || [],
+      resume_text: stored.resumeText || "",
+      coding_stats: stored.codingStats || {},
     }),
   });
   if (!response.ok) {
@@ -50,7 +53,11 @@ async function analyseJob(payload, userSkills) {
 }
 
 async function handleJobData(payload) {
-  const { userSkills = [] } = await chrome.storage.local.get("userSkills");
+  const stored = await chrome.storage.local.get(["userSkills", "analysisConsent"]);
+  if (!stored.analysisConsent) {
+    throw new Error("Please review and accept the privacy controls in Settings before analyzing a page.");
+  }
+  const { userSkills = [] } = stored;
   const analysis = await analyseJob(payload, userSkills);
   await chrome.storage.session.set({
     liveJobData: payload,
@@ -90,6 +97,10 @@ async function extractFromTab(tabId) {
 }
 
 async function analyseTabId(tabId) {
+  const { analysisConsent } = await chrome.storage.local.get("analysisConsent");
+  if (!analysisConsent) {
+    return { ok: false, error: "Review and accept the privacy controls in Settings before analyzing a page." };
+  }
   let tab;
   try {
     tab = await resolveTargetTab(tabId);

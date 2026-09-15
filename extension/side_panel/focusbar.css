@@ -319,6 +319,83 @@ input, textarea, select {
 .platform-row:last-child {
   border-bottom: none;
 }
+
+/* FocusBar dark workspace theme */
+:root {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --panel: #151b24;
+  --panel-raised: #1c2531;
+  --line: #2d3948;
+  --text: #e8edf3;
+  --muted: #91a0b2;
+  --accent: #55d6be;
+  --accent-strong: #2fb49d;
+}
+
+body {
+  min-width: 280px;
+  background: radial-gradient(circle at top right, #203543 0, var(--bg) 42%);
+  color: var(--text);
+  font-family: "Segoe UI", sans-serif;
+}
+
+.app-header {
+  padding: 8px 0 14px;
+}
+
+.app-header h1 { color: var(--accent); letter-spacing: 0.02em; }
+.subtitle, .muted { color: var(--muted); }
+
+nav ul { gap: 6px; }
+nav ul li {
+  color: var(--muted);
+  padding: 7px 9px;
+  transition: background 160ms ease, color 160ms ease;
+}
+nav ul li:hover { background: var(--panel-raised); color: var(--text); }
+nav ul li.active { background: var(--accent); color: #071412; }
+
+.card, .job-snapshot, .company-card, .tech-stack, .roles, .salary, .locations,
+.stat-card, .session-timer, .platform-info, .topics-breakdown, .platform-stats {
+  background: rgba(21, 27, 36, 0.94);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.welcome-line {
+  margin: 0 0 16px;
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.live-meta { color: var(--muted); font-size: 11px; }
+.finding { border-left: 3px solid var(--line); padding: 6px 8px; margin: 6px 0; background: rgba(255, 255, 255, 0.03); }
+.finding-matched { border-color: var(--accent); }
+.finding-weak { border-color: #e9c46a; }
+.finding-missing { border-color: #ff8e8e; }
+.finding-status { float: right; font-size: 11px; text-transform: uppercase; color: var(--muted); }
+.finding p { margin: 4px 0; }
+
+input, textarea, select {
+  background: #0f151d;
+  border-color: var(--line);
+  color: var(--text);
+}
+input::placeholder, textarea::placeholder { color: #718095; }
+.btn { background: var(--accent-strong); color: #071412; font-weight: 650; }
+.btn:hover { background: var(--accent); }
+#backend-status { border-color: var(--line); }
+.status-online { color: var(--accent) !important; }
+.status-offline { color: #ff8e8e !important; }
+.tag { color: #101820; }
+#qa-modal { background: var(--panel); border: 1px solid var(--line); }
+.company-card h3, .tech-stack h4, .roles h4, .salary h4, .locations h4,
+.session-timer h3, .platform-info h4, .topics-breakdown h4, .platform-stats h4 {
+  color: var(--text);
+}
+.salary-tier { background: var(--panel-raised); }
 .topic-name,
 .platform-name {
   font-size: 13px;

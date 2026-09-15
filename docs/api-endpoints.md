@@ -1,47 +1,54 @@
-# API endpoints
+# API Endpoints
 
-Base URL (local): `http://127.0.0.1:8000`
+Base URL: `http://127.0.0.1:8000`
 
-Interactive docs: http://127.0.0.1:8000/docs
+Interactive API documentation: `http://127.0.0.1:8000/docs`
 
-## Phase 2 (live)
+## Runtime
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/job/analyse` | Parse JD → mandatory/nice-to-have skills + user match |
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` | Service identity and docs link |
+| GET | `/health` | API and PostgreSQL status |
+| POST | `/auth/google` | Verify a Google access token |
+| GET | `/auth/health` | OAuth configuration status |
 
-Request body:
+## Live job and readiness analysis
 
-```json
-{
-  "title": "Software Engineer",
-  "company": "Example Corp",
-  "jd": "Required: Python, Docker...",
-  "user_skills": [{ "name": "Python", "level": "strong" }]
-}
-```
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/job/analyse` | Parse current job text and return requirements, readiness, evidence, priorities, source, and timestamp |
 
-Response includes `mandatory_skills`, `nice_to_have_skills`, and `match` (`covered` / `weak` / `missing`).
+The request may include `title`, `company`, `jd`, `location`, `work_mode`, `page_url`, `user_skills`, `resume_text`, and `coding_stats`. The readiness result is calculated from those values only.
 
-## Phase 1 (live)
+## Resume
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | API welcome |
-| GET | `/health` | API + database status |
-| GET | `/user/test` | Resume router stub |
-| GET | `/company/test` | Company router stub |
-| GET | `/coding/test` | Coding router stub |
-| GET | `/qa/health` | Q&A router stub |
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/user/resume/upload` | Extract text from PDF, DOCX, or TXT |
+| POST | `/user/resume/check` | Return Resume-JD Match Score, keyword gaps, formatting flags, missing sections, and suggestions |
 
-## Phase 2+ (planned)
+## Company
 
-| Method | Path | Phase |
-|--------|------|-------|
-| POST | `/job/analyse` | 2 |
-| POST | `/job/outcome` | 8 |
-| POST | `/user/resume` | 4 |
-| GET | `/company/{company_name}` | 5 |
-| POST | `/coding/session` | 6 |
-| GET | `/coding/summary` | 6 |
-| POST | `/coding/account-sync` | 6 |
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/company/from-page` | Return company and technology facts found in the submitted page text |
+| POST | `/company/analyze-realtime` | Alias for current-page company analysis |
+
+Company responses intentionally do not claim salary, leadership, or interview facts without a verified source.
+
+## Coding
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/coding/sync` | Fetch available public profile fields for supplied usernames |
+
+The sync returns an explicit error for unavailable, private, invalid, blocked, or unreadable profiles. It does not convert failures into zero counts.
+
+## Q&A, applications, and roadmap
+
+The repository also exposes Q&A, application, coding-session, and gap-analysis routes. These are useful local APIs, but database-backed persistence requires `DATABASE_URL`. `/gap-analysis/job-match/{user_id}` does not return a fabricated score; use `/job/analyse` with the live job description instead.
+
+## Error policy
+
+The API returns an error or an unavailable status when the page, resume, profile, or external source cannot be verified. Clients should show that state to the user rather than substituting demo data.

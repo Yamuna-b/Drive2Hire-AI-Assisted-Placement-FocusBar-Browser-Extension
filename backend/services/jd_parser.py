@@ -21,6 +21,7 @@ EDUCATION_LINE = re.compile(
     r"(?im)educational\s+qualification\s*[:\-]\s*(.+)$|"
     r"(\d+)\s+years?\s+(?:of\s+)?full\s+time\s+education"
 )
+EMPLOYMENT_LINE = re.compile(r"(?i)\b(full[- ]time|part[- ]time|contract|internship|temporary)\b")
 
 JUNK_PHRASE = re.compile(
     r"(?i)easy apply|actively hiring|see more|show more|promoted|save job|"
@@ -49,6 +50,7 @@ GENERIC_UNLESS_LABELED = {
 }
 
 SHORT_ALIAS_SKIP = {"ai", "ml", "ui", "cv", "bi", "r"}
+_SKILLS_CACHE = None
 
 
 def _is_junk_phrase(phrase: str) -> bool:
@@ -178,6 +180,7 @@ def _extract_experience(jd_text: str) -> dict:
         "minimum_years": int(years) if years else None,
         "focus_skill": skill_focus,
         "education": edu,
+        "employment_type": (EMPLOYMENT_LINE.search(jd_text or "").group(1) if EMPLOYMENT_LINE.search(jd_text or "") else None),
     }
 
 

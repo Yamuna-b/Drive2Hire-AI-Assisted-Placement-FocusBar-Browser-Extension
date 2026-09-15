@@ -104,6 +104,15 @@ def check_ats(resume_text: str, jd_text: str = "", mandatory_skills: list = None
     # --- Action verb count ---
     action_verb_count = sum(1 for v in _ACTION_VERBS if re.search(r"\b" + v + r"\b", lower_text))
 
+    section_names = {
+        "projects": r"\bprojects?\b",
+        "achievements": r"\bachievements?|awards?\b",
+        "education": r"\beducation\b",
+        "experience": r"\bexperience\b",
+        "skills": r"\bskills?\b",
+    }
+    missing_sections = [name for name, pattern in section_names.items() if not re.search(pattern, lower_text)]
+
     # --- Keyword matching against JD ---
     skills_config = _load_skills_config()
 
@@ -173,6 +182,8 @@ def check_ats(resume_text: str, jd_text: str = "", mandatory_skills: list = None
         tips.append("Expand your resume — most ATS systems prefer 250–700 words.")
     if not any(f["id"] == "no_contact" for f in [r for r in _FORMATTING_RULES if r["check"](text)]):
         pass  # contact info present
+    if missing_sections:
+        tips.append(f"Consider adding these sections: {', '.join(missing_sections)}.")
     if score >= 80:
         tips.append("Great match! Your resume aligns well with this job.")
     elif score >= 60:
@@ -187,5 +198,6 @@ def check_ats(resume_text: str, jd_text: str = "", mandatory_skills: list = None
         "formatting_flags": formatting_flags,
         "action_verb_count": action_verb_count,
         "word_count": wc,
+        "missing_sections": missing_sections,
         "tips": tips,
     }

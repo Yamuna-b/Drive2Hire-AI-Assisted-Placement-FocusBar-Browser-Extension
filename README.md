@@ -2,31 +2,33 @@
 
 Chrome side-panel extension + FastAPI backend that helps engineering students prepare for placements.
 
-## Phase 4 status (complete) — Universal Extraction
+## Current status — working local MVP
 
-- **Generic DOM parsing** works on ANY job website (not just LinkedIn/Naukri)
+- **Visible-page extraction** works on common job pages and rejects pages that do not look like job postings
 - Intelligently extracts job title, company, description from unknown websites
 - Extended skills database with 200+ domain-specific skills (Siemens eMeter, EnergyIP, MDMS, SAP, Oracle, etc.)
 - Dynamic skill extraction for domain-specific terms not in predefined database
 - Auto-detects job pages and extracts content automatically with MutationObserver
 
-## Phase 3 status (in progress) — Q&A Refinement
+## Implemented product flow
 
-- `POST /qa/generate-questions` endpoint generates Q&A for skills with duration gaps
-- Frontend "Refine Skills Q&A" button triggers dynamic questioning modal
-- Modal captures user experience duration and project notes for gap skills
-- Stores responses in chrome.storage.local for future reference
+- Sign in locally or with Google OAuth verification
+- Consent-gated live job analysis with readiness score and evidence findings
+- Resume upload/paste, Resume-JD Match Score, missing sections, and suggestions
+- Public coding profile sync with source and retrieval time
+- Saved job/application snapshots stored in extension storage
+- Dark side-panel UI with honest loading, empty, and unavailable states
 
-## Phase 2 status (complete) — Multi-Site Support
+## Supported extraction approach
 
-- Job-page DOM parsing for LinkedIn, Naukri, Indeed, Glassdoor, and any generic job site
+- Job-page DOM parsing for common LinkedIn, Naukri, Indeed, Glassdoor, and career-page layouts
 - `POST /job/analyse` — rule-based mandatory vs nice-to-have skill extraction
 - Detects and extracts skills from complete job description text
 - Job tab shows snapshot, skills, and covered / weak / missing match vs user profile
 
 ## Phase 1 status (complete)
 
-- Manifest V3 extension with Job / Company / Coding tabs (text-first placeholder UI)
+- Manifest V3 extension with Job / Company / Coding / Settings tabs
 - Side panel opens when you click the extension icon
 - FastAPI backend with `/health`, `/docs`, all routers registered
 - PostgreSQL models available (tables auto-created on startup when DB is reachable)
@@ -106,20 +108,23 @@ The footer in the side panel shows backend connectivity.
 
 After code changes: click **Reload** on `chrome://extensions`, then reopen the side panel.
 
-## What's next — Phase 5
+## What is still missing
 
-Phase 5 will add company insights: tech stack, typical roles, salary bands, and company profile.
+- Backend sessions/JWT and user-scoped PostgreSQL persistence
+- Project evidence management and editable detected requirements
+- Reliable topic-level coding evidence, beginning with LeetCode
+- Live, sourced company facts beyond the current job page
+- Production hosting, Chrome Web Store publishing, and Firefox packaging
 
 ### Test Phase 4 (Universal Extraction)
 
 1. Start backend: `.\scripts\start-backend.ps1`
 2. Reload extension at `chrome://extensions`
-3. Open ANY job listing page:
+3. Open a supported job listing page:
    - LinkedIn Jobs (known site)
    - Naukri (known site)
    - Indeed (known site)
    - Accenture careers page (generic site)
-   - **Any other job posting on the web**
 4. Click the extension icon → **Job** tab
 5. Job data should auto-extract (or click "Analyze current job page")
 6. You should see job title, skills, and your match breakdown

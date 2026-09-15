@@ -189,19 +189,13 @@ async def generate_learning_roadmap(request: GapAnalysisRequest, db: Session = D
 
 @router.get("/job-match/{user_id}")
 async def calculate_job_match(user_id: int, job_title: str, company: str, db: Session = Depends(get_db)):
-    """Calculate match score between user and a job (0-100)."""
-    
-    # This would integrate with actual skill extraction from job posting
-    # For now, return placeholder
-    
+    """The live match is produced by POST /job/analyse from the current page."""
     return {
         "user_id": user_id,
         "job_title": job_title,
         "company": company,
-        "match_score": 65,  # 0-100
-        "covered_skills": ["Java", "SQL"],
-        "missing_skills": ["Spring Boot", "Microservices"],
-        "recommendation": "You have good foundational skills. Focus on Spring Boot and system design for this role."
+        "status": "requires_live_job_description",
+        "message": "Send the current job description to POST /job/analyse for an evidence-backed result.",
     }
 
 

@@ -1,8 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
   const content = document.getElementById("content");
   const statusEl = document.getElementById("backend-status");
-  const welcomeEl = document.getElementById("welcome-line");
   const tabs = document.querySelectorAll("nav ul li");
+  const backendUrl = "http://127.0.0.1:8000";
   let activeTab = "Home";
 
   function escapeHtml(value) {
@@ -26,6 +26,19 @@ document.addEventListener("DOMContentLoaded", () => {
     return `<div class="card"><h3>${title}</h3><p class="muted">${text}</p></div>`;
   }
 
+  function liveMeta(source, timestamp, confidence) {
+    return `<p class="live-meta">Source: ${escapeHtml(source || "current page")} · Updated: ${timestamp ? new Date(timestamp).toLocaleString() : "just now"} · Confidence: ${escapeHtml(confidence || "needs review")}</p>`;
+  }
+
+  function readinessRows(items) {
+    if (!items?.length) return `<p class="muted">None found from the available evidence.</p>`;
+    return items.map((item) => `<div class="finding finding-${escapeHtml(item.status)}">
+      <div><strong>${escapeHtml(item.skill)}</strong><span class="finding-status">${escapeHtml(item.status)}</span></div>
+      <p>${escapeHtml(item.evidence?.join(" + ") || "No evidence found")}</p>
+      <p class="muted">${escapeHtml(item.priority)} priority · ${escapeHtml(item.action)}</p>
+    </div>`).join("");
+  }
+
   async function getStore() {
     const local = await chrome.storage.local.get([
       "profile",
@@ -36,6 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
       "codingHandles",
       "codingSessions",
       "codingStats",
+      "codingSyncedAt",
     ]);
     const session = await chrome.storage.session.get(["liveAnalysis", "liveJobData"]);
     return { ...local, liveAnalysis: session.liveAnalysis, liveJobData: session.liveJobData };
@@ -67,7 +81,6 @@ document.addEventListener("DOMContentLoaded", () => {
           errEl.textContent = res?.error || "Google sign-in failed";
           return;
         }
-        welcomeEl.textContent = `Welcome ${res.user.name}`;
         renderActiveTab();
       });
     });
@@ -76,7 +89,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const email = document.getElementById("auth-email").value.trim();
       if (!name || !email) return;
       await chrome.storage.local.set({ profile: { name, email, signedIn: true } });
-      welcomeEl.textContent = `Welcome ${name}`;
       renderActiveTab();
     });
   }
@@ -97,6 +109,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const lc = stats.leetcode || {};
     content.innerHTML = `
       <h2>Home</h2>
+      <p class="welcome-line">Welcome ${escapeHtml(profile.name || "there")}</p>
+      <button id="btn-home-analyse" class="btn">Analyze current job</button>
       <div class="card">
         <h3>Coding (live sync)</h3>
         ${
@@ -110,7 +124,8 @@ document.addEventListener("DOMContentLoaded", () => {
         ${
           last
             ? `<p><strong>${escapeHtml(last.title || "Untitled")}</strong><br>${escapeHtml(last.company || "")}</p>
-               <p>Match: ${last.match_percent || 0}%</p>`
+              <p>Readiness: ${last.readiness?.score ?? last.match_percent ?? 0}%</p>
+              ${liveMeta(last.extraction?.source || last.page_url, last.retrieved_at, last.extraction?.confidence)}`
             : `<p class="muted">Open any job page and use the Job tab → Analyze this page.</p>`
         }
       </div>
@@ -119,7 +134,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ${
           apps.length
             ? apps.map((a) => `<p>${escapeHtml(a.title)} — ${escapeHtml(a.company)} (${escapeHtml(a.status)})</p>`).join("")
-            : `<p class="muted">None logged yet. Analyze a job, then log status on the Job tab.</p>`
+            : `<p class="muted">None logged yet.</p><button id="btn-home-applications" class="btn">Analyze current job</button>`
         }
       </div>
       <div class="card">
@@ -127,7 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ${
           saved.length
             ? saved.map((j) => `<p>${escapeHtml(j.title)} — ${escapeHtml(j.company)}</p>`).join("")
-            : `<p class="muted">Empty until you save a job from the Job tab.</p>`
+            : `<p class="muted">Empty until you save a job from the Job tab.</p><button id="btn-home-saved" class="btn">View current job</button>`
         }
       </div>
       <div class="card">
@@ -136,6 +151,21 @@ document.addEventListener("DOMContentLoaded", () => {
         <p>Jobs applied (logged): ${apps.filter((a) => a.status === "applied").length}</p>
       </div>
     `;
+    document.getElementById("btn-home-analyse")?.addEventListener("click", () => {
+      activeTab = "Job";
+      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "Job"));
+      renderActiveTab();
+    });
+    document.getElementById("btn-home-applications")?.addEventListener("click", () => {
+      activeTab = "Job";
+      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "Job"));
+      renderActiveTab();
+    });
+    document.getElementById("btn-home-saved")?.addEventListener("click", () => {
+      activeTab = "Job";
+      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "Job"));
+      renderActiveTab();
+    });
   }
 
   function bindAnalyse(onDone) {
@@ -143,8 +173,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!btn) return;
     btn.addEventListener("click", () => {
       btn.disabled = true;
-      btn.textContent = "Reading page…";
+      const stages = ["Reading job page…", "Extracting requirements…", "Matching profile and resume…", "Checking coding evidence…"];
+      let stage = 0;
+      btn.textContent = stages[stage];
+      const stageTimer = setInterval(() => {
+        stage = Math.min(stage + 1, stages.length - 1);
+        btn.textContent = stages[stage];
+      }, 900);
       chrome.runtime.sendMessage({ type: "analyseCurrentTab" }, (response) => {
+        clearInterval(stageTimer);
         btn.disabled = false;
         btn.textContent = "Analyze this page";
         if (chrome.runtime.lastError || !response?.ok) {
@@ -169,7 +206,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!analysis) {
       content.innerHTML = `
         <h2>Job</h2>
-        ${emptyBlock("Live page analysis", "Open any job posting (any website). Click Analyze — we read the page text, we do not use a canned template.")}
+        ${emptyBlock("Live page analysis", "Open a supported job posting and click Analyze. We read the visible page text only after you ask us to.")}
         <button id="btn-analyse" class="btn">Analyze this page</button>
       `;
       bindAnalyse((a, e) => renderJob(a, e));
@@ -178,13 +215,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const match = analysis.match || { covered: [], weak: [], missing: [] };
     const exp = analysis.experience || {};
+    const readiness = analysis.readiness || { score: analysis.match_percent || 0, findings: [] };
     content.innerHTML = `
       <h2>Job analysis</h2>
       <div class="job-snapshot">
         <h2>${escapeHtml(analysis.title || "Could not read title")}</h2>
         <p class="company">${escapeHtml(analysis.company || "Could not read company")}</p>
         <p class="muted">${escapeHtml(analysis.location || "")} ${escapeHtml(analysis.work_mode || "")}</p>
-        <p><strong>Match: ${analysis.match_percent || 0}%</strong> — based on your Settings skills vs this page.</p>
+        <p><strong>Readiness: ${readiness.score}%</strong></p>
+        <p class="muted">${escapeHtml(readiness.formula || "Based on live evidence available now.")}</p>
+        ${liveMeta(analysis.extraction?.source || analysis.page_url, analysis.retrieved_at, analysis.extraction?.confidence)}
+        <p class="muted">Review detected details before relying on this result.</p>
+      </div>
+      <div class="card readiness-report">
+        <h3>Readiness report</h3>
+        <div class="skill-group"><strong>Matched evidence</strong>${readinessRows(readiness.matched)}</div>
+        <div class="skill-group"><strong>Missing required skills</strong>${readinessRows(readiness.missing_required)}</div>
+        <div class="skill-group"><strong>Weak or insufficient evidence</strong>${readinessRows(readiness.weak_evidence)}</div>
       </div>
       <div class="skill-group"><strong>Mandatory (from this JD)</strong>${tags(analysis.mandatory_skills, "mandatory")}</div>
       <div class="skill-group"><strong>Nice-to-have (from this JD)</strong>${tags(analysis.nice_to_have_skills, "nice")}</div>
@@ -194,13 +241,14 @@ document.addEventListener("DOMContentLoaded", () => {
           : ""
       }
       ${exp.education ? `<p>Education stated on page: ${escapeHtml(exp.education)}</p>` : ""}
+      ${exp.employment_type ? `<p>Employment type stated on page: ${escapeHtml(exp.employment_type)}</p>` : ""}
       <div class="match-section">
         <strong>Your match</strong>
         <div class="skill-group"><strong>Covered</strong>${tags(match.covered, "covered")}</div>
         <div class="skill-group"><strong>Weak</strong>${tags(match.weak, "weak")}</div>
         <div class="skill-group"><strong>Missing</strong>${tags(match.missing, "missing")}</div>
       </div>
-      <p class="muted">Source: live page text. Add skills in Settings so match is about you, not a default profile.</p>
+      <p class="muted">Source URL: ${escapeHtml(analysis.page_url || "Unavailable")}</p>
       <button id="btn-analyse" class="btn">Analyze this page</button>
       <button id="btn-save-job" class="btn">Save job</button>
       <button id="btn-qa" class="btn">Refine skills Q&amp;A</button>
@@ -220,7 +268,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("btn-save-job")?.addEventListener("click", async () => {
       const saved = data.savedJobs || [];
-      saved.unshift({ title: analysis.title, company: analysis.company, url: analysis.page_url, at: Date.now() });
+      saved.unshift({ title: analysis.title, company: analysis.company, url: analysis.page_url, analysis: structuredClone(analysis), at: Date.now() });
       await chrome.storage.local.set({ savedJobs: saved.slice(0, 50) });
     });
 
@@ -230,6 +278,7 @@ document.addEventListener("DOMContentLoaded", () => {
         title: analysis.title,
         company: analysis.company,
         status: document.getElementById("outcome-status").value,
+        analysis: structuredClone(analysis),
         at: Date.now(),
       });
       await chrome.storage.local.set({ applications: apps });
@@ -296,7 +345,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     content.innerHTML = `<p class="muted">Reading company facts from the last analyzed page…</p>`;
     try {
-      const res = await fetch("http://127.0.0.1:8000/company/from-page", {
+      const res = await fetch(`${backendUrl}/company/from-page`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -333,18 +382,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function renderPlatformCard(label, stat) {
+  function renderPlatformCard(label, stat, syncedAt) {
     if (!stat) return `<div class="card"><h3>${label}</h3><p class="muted">No username saved.</p></div>`;
     if (!stat.ok) return `<div class="card"><h3>${label}</h3><p class="error">${escapeHtml(stat.error || "Sync failed")}</p></div>`;
     const lines = Object.entries(stat)
       .filter(([k]) => !["ok", "platform", "source", "error"].includes(k))
       .map(([k, v]) => `<p>${escapeHtml(k)}: ${escapeHtml(v)}</p>`)
       .join("");
-    return `<div class="card"><h3>${label}</h3>${lines}<p class="muted">${escapeHtml(stat.source || "")}</p></div>`;
+    return `<div class="card"><h3>${label}</h3>${lines}<p class="muted">Source: ${escapeHtml(stat.source || "unknown")} · Updated: ${syncedAt ? new Date(syncedAt).toLocaleString() : "unknown"}</p></div>`;
   }
 
   async function syncCodingHandles(handles) {
-    const res = await fetch("http://127.0.0.1:8000/coding/sync", {
+    const res = await fetch(`${backendUrl}/coding/sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -368,13 +417,19 @@ document.addEventListener("DOMContentLoaded", () => {
     content.innerHTML = `
       <h2>Coding</h2>
       <p class="muted">Live numbers from public profiles. Empty until you save usernames and click Sync.</p>
-      ${renderPlatformCard("LeetCode", stats.leetcode)}
-      ${renderPlatformCard("GeeksforGeeks", stats.gfg)}
-      ${renderPlatformCard("Codeforces", stats.codeforces)}
-      ${renderPlatformCard("HackerRank", stats.hackerrank)}
+      <button id="btn-coding-settings" class="btn">Go to settings</button>
+      ${renderPlatformCard("LeetCode", stats.leetcode, data.codingSyncedAt)}
+      ${renderPlatformCard("GeeksforGeeks", stats.gfg, data.codingSyncedAt)}
+      ${renderPlatformCard("Codeforces", stats.codeforces, data.codingSyncedAt)}
+      ${renderPlatformCard("HackerRank", stats.hackerrank, data.codingSyncedAt)}
       <button id="btn-sync-coding" class="btn">Sync now</button>
       <p id="sync-msg" class="muted"></p>
     `;
+    document.getElementById("btn-coding-settings").onclick = () => {
+      activeTab = "Settings";
+      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "Settings"));
+      renderActiveTab();
+    };
     document.getElementById("btn-sync-coding").onclick = async () => {
       const msg = document.getElementById("sync-msg");
       msg.textContent = "Fetching live stats…";
@@ -386,7 +441,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         renderCoding();
       } catch (err) {
-        msg.textContent = "Backend offline? Start scripts/start-backend.ps1 — " + err.message;
+        msg.textContent = "Analysis service unavailable. Please try again later.";
       }
     };
   }
@@ -404,12 +459,20 @@ document.addEventListener("DOMContentLoaded", () => {
         <button id="btn-signout" class="btn">Sign out</button>
       </div>
       <div class="card">
+        <h3>Privacy and data</h3>
+        <p class="muted">Drive2Hire reads visible text only after you click Analyze. Resume text stays in this browser unless you connect a future account service. Only public coding usernames are synced.</p>
+        <label><input id="analysis-consent" type="checkbox" ${data.analysisConsent ? "checked" : ""}> I understand and consent to live analysis when I click Analyze.</label>
+        <button id="btn-delete-resume" class="btn">Delete saved resume</button>
+        <button id="btn-delete-data" class="btn">Delete local profile data</button>
+        <p id="privacy-msg" class="muted"></p>
+      </div>
+      <div class="card">
         <h3>Resume</h3>
         <input id="resume-file" type="file" accept=".pdf,.docx,.txt">
         <button id="btn-upload-resume" class="btn">Upload resume</button>
         <textarea id="resume-text" rows="6" placeholder="Or paste resume text">${escapeHtml(data.resumeText || "")}</textarea>
         <button id="btn-save-resume" class="btn">Save pasted text</button>
-        <button id="btn-ats" class="btn">ATS check vs current job page</button>
+        <button id="btn-ats" class="btn">Resume-JD Match Score</button>
         <pre id="ats-out" class="muted"></pre>
       </div>
       <div class="card">
@@ -429,8 +492,20 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
     document.getElementById("btn-signout").onclick = async () => {
       await chrome.storage.local.set({ profile: { name: "", email: "", signedIn: false } });
-      welcomeEl.textContent = "";
       renderActiveTab();
+    };
+    document.getElementById("analysis-consent").onchange = async (event) => {
+      await chrome.storage.local.set({ analysisConsent: event.target.checked });
+    };
+    document.getElementById("btn-delete-resume").onclick = async () => {
+      await chrome.storage.local.remove(["resumeText", "resumeFilename"]);
+      document.getElementById("resume-text").value = "";
+      document.getElementById("privacy-msg").textContent = "Saved resume deleted from this browser.";
+    };
+    document.getElementById("btn-delete-data").onclick = async () => {
+      await chrome.storage.local.clear();
+      await chrome.storage.session.clear();
+      document.getElementById("privacy-msg").textContent = "Local profile data deleted. Reload the panel to sign in again.";
     };
     document.getElementById("btn-upload-resume").onclick = async () => {
       const file = document.getElementById("resume-file").files[0];
@@ -440,15 +515,18 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("http://127.0.0.1:8000/user/resume/upload", { method: "POST", body: form });
-      const out = await res.json();
-      if (!res.ok) {
-        document.getElementById("ats-out").textContent = out.detail || JSON.stringify(out);
-        return;
+      const output = document.getElementById("ats-out");
+      output.textContent = "Reading resume…";
+      try {
+        const res = await fetch(`${backendUrl}/user/resume/upload`, { method: "POST", body: form });
+        const out = await res.json();
+        if (!res.ok) throw new Error(out.detail || `Upload failed (${res.status})`);
+        document.getElementById("resume-text").value = out.resume_text;
+        await chrome.storage.local.set({ resumeText: out.resume_text, resumeFilename: out.filename });
+        output.textContent = `Uploaded ${out.filename} (${out.chars} characters).`;
+      } catch (err) {
+        output.textContent = `Resume upload failed: ${err.message}. Please try again later.`;
       }
-      document.getElementById("resume-text").value = out.resume_text;
-      await chrome.storage.local.set({ resumeText: out.resume_text, resumeFilename: out.filename });
-      document.getElementById("ats-out").textContent = `Uploaded ${out.filename} (${out.chars} characters).`;
     };
     document.getElementById("btn-save-resume").onclick = async () => {
       await chrome.storage.local.set({ resumeText: document.getElementById("resume-text").value });
@@ -477,7 +555,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const out = await syncCodingHandles(codingHandles);
         msg.textContent = out.ok ? "Synced. Open the Coding tab to see numbers." : (out.error || "Sync failed");
       } catch (err) {
-        msg.textContent = "Saved usernames, but backend is offline: " + err.message;
+        msg.textContent = "Saved usernames, but live sync is unavailable right now.";
       }
     };
     document.getElementById("btn-ats").onclick = async () => {
@@ -487,25 +565,31 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("ats-out").textContent = "Upload or paste resume text first.";
         return;
       }
-      const res = await fetch("http://127.0.0.1:8000/user/resume/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          resume_text: resume,
-          jd_text: (data.liveJobData && data.liveJobData.jd) || "",
-          mandatory_skills: last?.mandatory_skills || [],
-          nice_to_have_skills: last?.nice_to_have_skills || [],
-        }),
-      });
-      const out = await res.json();
-      document.getElementById("ats-out").textContent = JSON.stringify(out, null, 2);
+      const output = document.getElementById("ats-out");
+      output.textContent = "Checking resume…";
+      try {
+        const res = await fetch(`${backendUrl}/user/resume/check`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resume_text: resume,
+            jd_text: (data.liveJobData && data.liveJobData.jd) || "",
+            mandatory_skills: last?.mandatory_skills || [],
+            nice_to_have_skills: last?.nice_to_have_skills || [],
+          }),
+        });
+        const out = await res.json();
+        if (!res.ok) throw new Error(out.detail || `ATS check failed (${res.status})`);
+        output.textContent = JSON.stringify(out, null, 2);
+      } catch (err) {
+        output.textContent = `ATS check failed: ${err.message}. Analyze a job and confirm the backend is running.`;
+      }
     };
   }
 
   function renderActiveTab() {
     chrome.storage.local.get("profile", (data) => {
       const p = data.profile || {};
-      welcomeEl.textContent = p.signedIn ? `Welcome ${p.name}` : "";
     });
     if (activeTab === "Home") return renderHome();
     if (activeTab === "Job") return renderJob();
@@ -523,15 +607,25 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  chrome.storage.onChanged.addListener((_changes, areaName) => {
+    if (areaName === "local" || areaName === "session") renderActiveTab();
+  });
+
   chrome.storage.local.remove(["lastJobAnalysis", "lastJobData"]);
   renderActiveTab();
 
-  fetch("http://127.0.0.1:8000/health")
-    .then((res) => res.json())
-    .then((data) => {
+  async function refreshBackendStatus() {
+    try {
+      const res = await fetch(`${backendUrl}/health`);
+      const data = await res.json();
       statusEl.textContent = `Backend: ${data.status}, DB: ${data.database}`;
-    })
-    .catch(() => {
-      statusEl.textContent = "Backend: offline — run scripts/start-backend.ps1";
-  });
+      statusEl.className = data.status === "ok" ? "status-online" : "status-offline";
+    } catch (_err) {
+      statusEl.textContent = "Analysis service unavailable. Please try again later.";
+      statusEl.className = "status-offline";
+    }
+  }
+
+  refreshBackendStatus();
+  setInterval(refreshBackendStatus, 15000);
 });
