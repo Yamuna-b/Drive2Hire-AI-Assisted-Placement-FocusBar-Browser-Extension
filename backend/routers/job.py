@@ -47,7 +47,10 @@ def _build_readiness(required, preferred, user_skills, resume_text, coding_stats
     profile = {_skill_name(skill).lower(): skill for skill in user_skills if _skill_name(skill)}
     resume_lower = (resume_text or "").lower()
     findings = []
-    for item, category in [(skill, "required") for skill in required] + [(skill, "preferred") for skill in preferred]:
+    
+    all_jd_items = [(skill, "required") for skill in required] + [(skill, "preferred") for skill in preferred]
+    
+    for item, category in all_jd_items:
         name = _skill_name(item)
         key = name.lower()
         evidence = []
@@ -57,33 +60,53 @@ def _build_readiness(required, preferred, user_skills, resume_text, coding_stats
             evidence.append("resume")
         evidence.extend(_coding_evidence(name, coding_stats))
         level = (profile.get(key, {}).get("level") or "moderate").lower()
+        
         if not evidence:
             status = "missing"
-            priority = "High" if category == "required" else "Low"
-            action = f"Build evidence for {name} and add it to your profile or resume."
+            priority = "High" if category == "required" else "Medium"
+            action = f"Learn {name} basics — required in current JD."
         elif level in {"weak", "beginner", "learning"} or len(evidence) == 1:
             status = "weak"
             priority = "Medium"
-            action = f"Add a concrete project or coding example that demonstrates {name}."
+            action = f"Add concrete project or coding proof for {name}."
         else:
             status = "matched"
             priority = "Low"
-            action = f"Highlight your {name} evidence for this application."
+            action = f"Highlight your {name} experience for this role."
+            
         findings.append({"skill": name, "category": category, "status": status, "evidence": evidence, "priority": priority, "action": action})
 
-    required_findings = [item for item in findings if item["category"] == "required"]
-    required_score = (sum(item["status"] == "matched" for item in required_findings) / len(required_findings) * 100) if required_findings else 0
-    all_score = (sum(item["status"] == "matched" for item in findings) / len(findings) * 100) if findings else 0
-    readiness_score = round(required_score * 0.6 + all_score * 0.4) if findings else 0
+    matched_count = sum(1 for item in findings if item["status"] == "matched")
+    weak_count = sum(1 for item in findings if item["status"] == "weak")
+    total_count = max(1, len(findings))
+
+    # Balanced score: matched = 1.0, weak = 0.5
+    raw_score = ((matched_count * 1.0 + weak_count * 0.5) / total_count) * 100
+    readiness_score = max(15, min(95, round(raw_score)))
+
+    # Generate dynamic priority actions based on ACTUAL missing skills in this JD
+    missing_skills = [f["skill"] for f in findings if f["status"] == "missing"]
+    priority_actions = []
+    if missing_skills:
+        priority_actions.append({"priority": "High", "text": f"Learn {missing_skills[0]} basics (Required in current JD; absent from profile).", "time": "3 days"})
+        if len(missing_skills) > 1:
+            priority_actions.append({"priority": "High", "text": f"Build a hands-on project with {missing_skills[1]} (Required in current JD).", "time": "4 days"})
+        if len(missing_skills) > 2:
+            priority_actions.append({"priority": "Medium", "text": f"Explore {missing_skills[2]} fundamentals & query tuning.", "time": "2 days"})
+    else:
+        priority_actions.append({"priority": "Low", "text": "Profile matches all key JD requirements. Review system design & resume tips.", "time": "1 day"})
+
     return {
         "score": readiness_score,
-        "formula": "60% required-skill match + 40% overall evidence coverage",
+        "formula": f"Based on {matched_count} matched skills and {weak_count} weak evidence skills out of {total_count} JD requirements.",
         "findings": findings,
         "matched": [item for item in findings if item["status"] == "matched"],
         "missing_required": [item for item in findings if item["status"] == "missing" and item["category"] == "required"],
         "weak_evidence": [item for item in findings if item["status"] == "weak"],
+        "priority_actions": priority_actions,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
 
 
 @router.post("/analyse")

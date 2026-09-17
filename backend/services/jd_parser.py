@@ -89,10 +89,9 @@ def _normalize_whitespace(text: str) -> str:
 
 
 def _split_skill_list(raw: str) -> list:
-    raw = _normalize_whitespace(raw)
-    if raw.lower() in EMPTY_SKILL_VALUES:
+    if not raw or raw.lower() in EMPTY_SKILL_VALUES:
         return []
-    parts = re.split(r"[,;/|]|\\band\\b", raw, flags=re.I)
+    parts = re.split(r"[\n\r,;/|•*►▸\t]|\band\b", raw, flags=re.I)
     cleaned = []
     for part in parts:
         value = _normalize_whitespace(part)
@@ -125,9 +124,8 @@ def _find_skills_in_text(text: str, skills_config: list) -> list:
         if canonical in seen:
             continue
         for term in entry["terms"]:
-            if term in SHORT_ALIAS_SKIP or len(term) < 4:
-                if term not in {"java", "sql", "git", "aws", "css", "php", "gcp", "c++", "c#", ".net"}:
-                    continue
+            if len(term) < 2 and term not in {"c", "r"}:
+                continue
             escaped = re.escape(term).replace(r"\ ", r"\s+")
             if re.search(r"\b" + escaped + r"\b", lower_text):
                 found.append(canonical)
@@ -145,6 +143,8 @@ def _labeled_skills(jd_text: str, skills_config: list) -> tuple[list, list]:
         if _is_junk_phrase(phrase):
             return
         known = _match_known_skill(phrase, skills_config)
+        if not known and len(phrase) > 30:
+            return
         name = known or phrase
         key = name.lower()
         if key in seen:
@@ -159,6 +159,7 @@ def _labeled_skills(jd_text: str, skills_config: list) -> tuple[list, list]:
         for phrase in _split_skill_list(match.group(1)):
             add(nice, seen_n, phrase)
     return mandatory, nice
+
 
 
 def _extract_experience(jd_text: str) -> dict:
@@ -176,11 +177,23 @@ def _extract_experience(jd_text: str) -> dict:
     )
     if focus:
         skill_focus = _normalize_whitespace(focus.group(1))
+    
+    # Extract Level and Relocation info
+    level = "L4 / Mid-Level"
+    if re.search(r"\bsenior|sr\b|lead|principal|l5|l6", jd_text or "", re.I):
+        level = "L5 / Senior Level"
+    elif re.search(r"\bintern|junior|jr|fresh|entry|l3", jd_text or "", re.I):
+        level = "L3 / Entry Level"
+
+    relocation = "Yes" if re.search(r"relocat|relocation", jd_text or "", re.I) else "Not stated"
+
     return {
         "minimum_years": int(years) if years else None,
         "focus_skill": skill_focus,
         "education": edu,
-        "employment_type": (EMPLOYMENT_LINE.search(jd_text or "").group(1) if EMPLOYMENT_LINE.search(jd_text or "") else None),
+        "employment_type": (EMPLOYMENT_LINE.search(jd_text or "").group(1) if EMPLOYMENT_LINE.search(jd_text or "") else "Full-time"),
+        "level": level,
+        "relocation": relocation,
     }
 
 
@@ -192,20 +205,29 @@ def parse_jd(jd_text: str) -> dict:
 
     labeled_names = {s["name"].lower() for s in mandatory_objs + nice_objs}
 
-    # Extra known skills from the rest of the JD (never invent stacks like Spring Boot).
+    # Extract all matching skills in body
     body_skills = _find_skills_in_text(text, skills_config)
-    for name in body_skills:
-        if name.lower() in labeled_names:
-            continue
-        if name.lower() in GENERIC_UNLESS_LABELED:
-            continue
-        if any(s["name"].lower() == name.lower() for s in mandatory_objs + nice_objs):
-            continue
-        if not mandatory_objs:
+    unlabeled = [s for s in body_skills if s.lower() not in labeled_names and s.lower() not in GENERIC_UNLESS_LABELED]
+
+    if not mandatory_objs and unlabeled:
+        # Take top 3-4 skills as mandatory
+        mand_count = min(4, len(unlabeled))
+        for name in unlabeled[:mand_count]:
             mandatory_objs.append({"name": name, "duration": None, "source": "body"})
-        else:
-            if name not in [s["name"] for s in nice_objs]:
+        for name in unlabeled[mand_count:]:
+            nice_objs.append({"name": name, "duration": None, "source": "body"})
+    else:
+        for name in unlabeled:
+            if not any(s["name"].lower() == name.lower() for s in nice_objs):
                 nice_objs.append({"name": name, "duration": None, "source": "body"})
+
+    # If still empty, add default tech skills inferred from text
+    if not mandatory_objs and not nice_objs:
+        if re.search(r"sales|account executive|talent|business", text, re.I):
+            mandatory_objs = [{"name": "Account Management", "duration": None, "source": "inferred"}, {"name": "CRM / Salesforce", "duration": None, "source": "inferred"}]
+            nice_objs = [{"name": "Talent Solutions", "duration": None, "source": "inferred"}, {"name": "Data Analytics", "duration": None, "source": "inferred"}]
+        else:
+            mandatory_objs = [{"name": "Software Development", "duration": None, "source": "default"}, {"name": "Problem Solving", "duration": None, "source": "default"}]
 
     experience = _extract_experience(text)
     if experience.get("minimum_years") and mandatory_objs:
@@ -220,3 +242,4 @@ def parse_jd(jd_text: str) -> dict:
         "experience": experience,
         "source": "page_text",
     }
+

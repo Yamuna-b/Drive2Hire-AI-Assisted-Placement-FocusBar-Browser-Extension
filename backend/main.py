@@ -48,20 +48,25 @@ async def root():
 
 # Phase 1-2: Job parsing and basic features
 app.include_router(job.router, prefix="/job", tags=["job"])
+app.include_router(job.router, prefix="/api", tags=["job-api"])
 app.include_router(resume.router, prefix="/user", tags=["resume"])
+app.include_router(resume.router, prefix="/api", tags=["resume-api"])
 
 # Phase 3: Q&A and skill refinement
 app.include_router(qa.router, prefix="/qa", tags=["qa"])
 
 # Phase 5: Company insights
 app.include_router(company.router, prefix="/company", tags=["company"])
+app.include_router(company.router, prefix="/api", tags=["company-api"])
 
 # Phase 6: Coding session tracker
 app.include_router(coding.router, prefix="/coding", tags=["coding"])
+app.include_router(coding.router, prefix="/api", tags=["coding-api"])
 app.include_router(coding_session.router, prefix="/coding-session", tags=["coding-session"])
 
 # Phase 7: Gap analysis and learning roadmap
 app.include_router(gap_analysis.router, prefix="/gap-analysis", tags=["gap-analysis"])
+app.include_router(gap_analysis.router, prefix="/api", tags=["gap-analysis-api"])
 
 # Phase 8: Application tracking
 app.include_router(application_tracking.router, prefix="/applications", tags=["applications"])
@@ -69,3 +74,4 @@ app.include_router(application_tracking.router, prefix="/applications", tags=["a
 # GitHub API integration
 app.include_router(github.router, prefix="/github", tags=["github"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+

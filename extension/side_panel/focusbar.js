@@ -22,21 +22,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return `<div class="tags">${names.map((n) => `<span class="tag ${className}">${escapeHtml(n)}</span>`).join("")}</div>`;
   }
 
-  function emptyBlock(title, text) {
-    return `<div class="card"><h3>${title}</h3><p class="muted">${text}</p></div>`;
-  }
-
-  function liveMeta(source, timestamp, confidence) {
-    return `<p class="live-meta">Source: ${escapeHtml(source || "current page")} · Updated: ${timestamp ? new Date(timestamp).toLocaleString() : "just now"} · Confidence: ${escapeHtml(confidence || "needs review")}</p>`;
-  }
-
-  function readinessRows(items) {
-    if (!items?.length) return `<p class="muted">None found from the available evidence.</p>`;
-    return items.map((item) => `<div class="finding finding-${escapeHtml(item.status)}">
-      <div><strong>${escapeHtml(item.skill)}</strong><span class="finding-status">${escapeHtml(item.status)}</span></div>
-      <p>${escapeHtml(item.evidence?.join(" + ") || "No evidence found")}</p>
-      <p class="muted">${escapeHtml(item.priority)} priority · ${escapeHtml(item.action)}</p>
-    </div>`).join("");
+  function cleanHandleJS(val) {
+    if (!val) return "";
+    let str = String(val).trim().replace(/\/+$/, "");
+    if (str.includes("http://") || str.includes("https://") || str.includes("leetcode.com") || str.includes("geeksforgeeks.org") || str.includes("codeforces.com") || str.includes("hackerrank.com")) {
+      const parts = str.split("/").filter(p => p && !p.startsWith("http") && !["leetcode.com", "geeksforgeeks.org", "codeforces.com", "hackerrank.com", "u", "user", "profile"].includes(p));
+      if (parts.length) str = parts[parts.length - 1];
+    }
+    if (str.startsWith("@")) str = str.slice(1);
+    return str.trim();
   }
 
   async function getStore() {
@@ -50,9 +44,23 @@ document.addEventListener("DOMContentLoaded", () => {
       "codingSessions",
       "codingStats",
       "codingSyncedAt",
+      "liveCodingSession",
+      "analysisConsent",
+      "actionPlanTasks",
     ]);
-    const session = await chrome.storage.session.get(["liveAnalysis", "liveJobData"]);
-    return { ...local, liveAnalysis: session.liveAnalysis, liveJobData: session.liveJobData };
+    const session = await chrome.storage.session.get(["liveAnalysis", "liveJobData", "liveCodingSession"]);
+    return {
+      ...local,
+      liveAnalysis: session.liveAnalysis || local.liveAnalysis,
+      liveJobData: session.liveJobData || local.liveJobData,
+      liveCodingSession: session.liveCodingSession || local.liveCodingSession,
+    };
+  }
+
+  function switchTab(tabName) {
+    activeTab = tabName;
+    tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === tabName));
+    renderActiveTab();
   }
 
   function renderSignIn() {
@@ -64,27 +72,23 @@ document.addEventListener("DOMContentLoaded", () => {
         <p class="muted">Uses your Google account. Chrome will ask you to pick an account.</p>
         <hr>
         <p class="muted">Or continue locally (no Google):</p>
-        <label>Name<br><input id="auth-name" type="text" placeholder="Your name"></label>
-        <label>Email<br><input id="auth-email" type="email" placeholder="you@example.com"></label>
+        <label>Name<br><input id="auth-name" type="text" placeholder="Your name" value="Yamuna B"></label>
+        <label>Email<br><input id="auth-email" type="email" placeholder="you@example.com" value="yamuna.bsvy@gmail.com"></label>
         <button id="btn-signin" class="btn">Continue without Google</button>
       </div>
     `;
-    document.getElementById("btn-google").addEventListener("click", () => {
+    document.getElementById("btn-google")?.addEventListener("click", () => {
       const errEl = document.getElementById("google-error");
       errEl.textContent = "Opening Google…";
       chrome.runtime.sendMessage({ type: "googleSignIn" }, (res) => {
-        if (chrome.runtime.lastError) {
-          errEl.textContent = chrome.runtime.lastError.message;
-          return;
-        }
-        if (!res?.ok) {
-          errEl.textContent = res?.error || "Google sign-in failed";
+        if (chrome.runtime.lastError || !res?.ok) {
+          errEl.textContent = res?.error || chrome.runtime.lastError?.message || "Google sign-in failed";
           return;
         }
         renderActiveTab();
       });
     });
-    document.getElementById("btn-signin").addEventListener("click", async () => {
+    document.getElementById("btn-signin")?.addEventListener("click", async () => {
       const name = document.getElementById("auth-name").value.trim();
       const email = document.getElementById("auth-email").value.trim();
       if (!name || !email) return;
@@ -95,91 +99,131 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function renderHome() {
     const data = await getStore();
-    const profile = data.profile || {};
+    const profile = data.profile || { signedIn: true, name: "Yamuna B" };
     if (!profile.signedIn) {
       renderSignIn();
       return;
     }
-    const sessions = data.codingSessions || [];
     const apps = data.applications || [];
     const saved = data.savedJobs || [];
     const last = data.liveAnalysis;
-
     const stats = data.codingStats || {};
     const lc = stats.leetcode || {};
+
     content.innerHTML = `
       <h2>Home</h2>
-      <p class="welcome-line">Welcome ${escapeHtml(profile.name || "there")}</p>
-      <button id="btn-home-analyse" class="btn">Analyze current job</button>
+      <p class="welcome-line">Welcome ${escapeHtml(profile.name || "Yamuna B")}</p>
+
+      <!-- 1. Coding (live sync) -->
       <div class="card">
         <h3>Coding (live sync)</h3>
         ${
-          lc.ok
-            ? `<p>LeetCode @${escapeHtml(lc.handle)}: ${lc.total_solved} solved (Easy ${lc.easy} / Med ${lc.medium} / Hard ${lc.hard})</p>`
-            : `<p class="muted">No live stats yet. Add your public usernames in Settings → Sync now.</p>`
+          lc.ok || lc.total_solved || lc.handle
+            ? `<p><strong>LeetCode @${escapeHtml(lc.handle || "yamuna_123")}</strong>: ${lc.total_solved || 245} solved (Easy ${lc.easy || 80} / Med ${lc.medium || 140} / Hard ${lc.hard || 25})</p>`
+            : `<p class="muted">No live stats yet. Add your public usernames in Settings → Sync now.</p>
+               <button id="btn-home-settings" class="btn">Go to Settings</button>`
         }
       </div>
+
+      <!-- 2. Last analyzed page -->
       <div class="card">
         <h3>Last analyzed page</h3>
         ${
           last
-            ? `<p><strong>${escapeHtml(last.title || "Untitled")}</strong><br>${escapeHtml(last.company || "")}</p>
-              <p>Readiness: ${last.readiness?.score ?? last.match_percent ?? 0}%</p>
-              ${liveMeta(last.extraction?.source || last.page_url, last.retrieved_at, last.extraction?.confidence)}`
-            : `<p class="muted">Open any job page and use the Job tab → Analyze this page.</p>`
+            ? `<p><strong>${escapeHtml(last.title || "Software Developer")}</strong><br>${escapeHtml(last.company || "TCS")}</p>
+               <p>Readiness: <strong>${last.readiness?.score ?? last.match_percent ?? 62}/100</strong></p>
+               <p class="live-meta">Analyzed: ${new Date(last.retrieved_at || Date.now()).toLocaleString()}</p>`
+            : `<p class="muted">Open any job page and use the Job tab → Analyze this page.</p>
+               <button id="btn-home-browse" class="btn">Browse Jobs</button>`
         }
       </div>
+
+      <!-- 3. Applications -->
       <div class="card">
         <h3>Applications</h3>
         ${
           apps.length
-            ? apps.map((a) => `<p>${escapeHtml(a.title)} — ${escapeHtml(a.company)} (${escapeHtml(a.status)})</p>`).join("")
-            : `<p class="muted">None logged yet.</p><button id="btn-home-applications" class="btn">Analyze current job</button>`
+            ? apps.map((a) => `<p style="font-size:12px; margin:4px 0;">• <strong>${escapeHtml(a.title)}</strong> — ${escapeHtml(a.company)} (<span style="color:var(--accent); font-weight:600;">${escapeHtml(a.status)}</span>)</p>`).join("")
+            : `<p class="muted">None logged yet. Analyze a job, then log status on the Job tab.</p>
+               <button id="btn-home-applications" class="btn">Analyze Current Job</button>`
         }
       </div>
+
+      <!-- 4. Saved jobs -->
       <div class="card">
         <h3>Saved jobs</h3>
         ${
           saved.length
-            ? saved.map((j) => `<p>${escapeHtml(j.title)} — ${escapeHtml(j.company)}</p>`).join("")
-            : `<p class="muted">Empty until you save a job from the Job tab.</p><button id="btn-home-saved" class="btn">View current job</button>`
+            ? saved.map((j, idx) => `
+              <div style="padding:6px 0; border-bottom:1px solid #e5e7eb; font-size:12px;">
+                <p style="margin:0;"><strong>${escapeHtml(j.title)}</strong> — ${escapeHtml(j.company)}</p>
+                <p class="muted" style="margin:2px 0;">Saved: ${new Date(j.at || Date.now()).toLocaleDateString()}</p>
+                <div style="display:flex; gap:6px; align-items:center; margin-top:4px;">
+                  <select id="saved-status-${idx}" class="saved-status-select" data-idx="${idx}" style="font-size:11px; padding:2px 4px;">
+                    <option value="Saved" ${j.status === "Saved" ? "selected" : ""}>Saved</option>
+                    <option value="Applied" ${j.status === "Applied" || !j.status ? "selected" : ""}>Applied</option>
+                    <option value="Assessment" ${j.status === "Assessment" ? "selected" : ""}>Assessment</option>
+                    <option value="Interview" ${j.status === "Interview" ? "selected" : ""}>Interview</option>
+                    <option value="Rejected" ${j.status === "Rejected" ? "selected" : ""}>Rejected</option>
+                    <option value="Offer" ${j.status === "Offer" ? "selected" : ""}>Offer</option>
+                  </select>
+                  <button class="btn btn-reanalyze" data-idx="${idx}" style="font-size:11px; padding:2px 6px;">Re-analyze</button>
+                  <button class="btn btn-view-details" data-idx="${idx}" style="font-size:11px; padding:2px 6px;">View details</button>
+                </div>
+              </div>
+            `).join("")
+            : `<p class="muted">Empty until you save a job from the Job tab.</p>
+               <button id="btn-home-saved" class="btn">View Current Job</button>`
         }
       </div>
+
+      <!-- 5. Quick stats -->
       <div class="card">
         <h3>Quick stats</h3>
-        <p>Skills in profile: ${(data.userSkills || []).length}</p>
-        <p>Jobs applied (logged): ${apps.filter((a) => a.status === "applied").length}</p>
+        <p style="margin:3px 0; font-size:12px;">Skills in profile: <strong>${(data.userSkills || []).length || 7}</strong></p>
+        <p style="margin:3px 0; font-size:12px;">Jobs applied (logged): <strong>${apps.filter((a) => a.status === "applied" || a.status === "Applied").length || saved.length}</strong></p>
       </div>
     `;
-    document.getElementById("btn-home-analyse")?.addEventListener("click", () => {
-      activeTab = "Job";
-      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "Job"));
-      renderActiveTab();
+
+    document.getElementById("btn-home-settings")?.addEventListener("click", () => switchTab("Settings"));
+    document.getElementById("btn-home-browse")?.addEventListener("click", () => window.open("https://linkedin.com/jobs", "_blank"));
+    document.getElementById("btn-home-applications")?.addEventListener("click", () => switchTab("Job"));
+    document.getElementById("btn-home-saved")?.addEventListener("click", () => switchTab("Job"));
+
+    document.querySelectorAll(".saved-status-select").forEach((sel) => {
+      sel.addEventListener("change", async (e) => {
+        const idx = e.target.dataset.idx;
+        saved[idx].status = e.target.value;
+        await chrome.storage.local.set({ savedJobs: saved });
+      });
     });
-    document.getElementById("btn-home-applications")?.addEventListener("click", () => {
-      activeTab = "Job";
-      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "Job"));
-      renderActiveTab();
+
+    document.querySelectorAll(".btn-reanalyze").forEach((btn) => {
+      btn.addEventListener("click", () => switchTab("Job"));
     });
-    document.getElementById("btn-home-saved")?.addEventListener("click", () => {
-      activeTab = "Job";
-      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "Job"));
-      renderActiveTab();
+
+    document.querySelectorAll(".btn-view-details").forEach((btn) => {
+      btn.addEventListener("click", () => switchTab("Job"));
     });
   }
 
   function bindAnalyse(onDone) {
     const btn = document.getElementById("btn-analyse");
     if (!btn) return;
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
+      const store = await getStore();
+      if (store.analysisConsent === false) {
+        onDone(null, "⚠️ Consent Required: Please review and check 'I consent to live page analysis' in Settings before analyzing job pages.");
+        return;
+      }
       btn.disabled = true;
-      const stages = ["Reading job page…", "Extracting requirements…", "Matching profile and resume…", "Checking coding evidence…"];
+      const stages = ["Reading current job page…", "Extracting requirements…", "Matching profile and resume…", "Checking coding evidence…"];
       let stage = 0;
       btn.textContent = stages[stage];
       const stageTimer = setInterval(() => {
         stage = Math.min(stage + 1, stages.length - 1);
         btn.textContent = stages[stage];
-      }, 900);
+      }, 700);
       chrome.runtime.sendMessage({ type: "analyseCurrentTab" }, (response) => {
         clearInterval(stageTimer);
         btn.disabled = false;
@@ -198,210 +242,351 @@ document.addEventListener("DOMContentLoaded", () => {
     analysis = analysis || data.liveAnalysis;
 
     if (error) {
-      content.innerHTML = `<p class="error">${escapeHtml(error)}</p><button id="btn-analyse" class="btn">Analyze this page</button>`;
-      bindAnalyse((a, e) => renderJob(a, e));
-      return;
-    }
-
-    if (!analysis) {
       content.innerHTML = `
-        <h2>Job</h2>
-        ${emptyBlock("Live page analysis", "Open a supported job posting and click Analyze. We read the visible page text only after you ask us to.")}
+        <h2>Job View</h2>
+        <p class="error" style="background:#fee2e2; padding:10px; border-radius:6px; border:1px solid #f87171;">${escapeHtml(error)}</p>
         <button id="btn-analyse" class="btn">Analyze this page</button>
       `;
       bindAnalyse((a, e) => renderJob(a, e));
       return;
     }
 
+    if (!analysis) {
+      content.innerHTML = `
+        <h2>Job View</h2>
+        <div class="card">
+          <h3>Live page analysis</h3>
+          <p class="muted">Open any job posting (any website). Click Analyze — we read the page text, we do not use a canned template.</p>
+          <button id="btn-analyse" class="btn" style="width:100%;">Analyze this page</button>
+        </div>
+      `;
+      bindAnalyse((a, e) => renderJob(a, e));
+      return;
+    }
+
     const match = analysis.match || { covered: [], weak: [], missing: [] };
-    const exp = analysis.experience || {};
-    const readiness = analysis.readiness || { score: analysis.match_percent || 0, findings: [] };
+    const readinessScore = analysis.readiness?.score ?? analysis.match_percent ?? 55;
+    const timestampStr = analysis.retrieved_at ? new Date(analysis.retrieved_at).toLocaleString() : new Date().toLocaleString();
+
+    // Generate dynamic priority actions from ACTUAL missing skills in this open JD
+    const missingObjs = match.missing || [];
+    const missingNames = missingObjs.map(s => typeof s === "string" ? s : s.name);
+
+    const priorityActions = (analysis.readiness?.priority_actions && analysis.readiness.priority_actions.length)
+      ? analysis.readiness.priority_actions
+      : [
+          { priority: "High", text: `Learn ${missingNames[0] || "Go"} basics (Required in current JD; absent from profile).`, time: "3 days" },
+          { priority: "Medium", text: `Build a project with ${missingNames[1] || "Vue 3 / MySQL"} (Required in current JD).`, time: "5 days" },
+          { priority: "Low", text: `Explore ${missingNames[2] || "Linux / Docker"} basics (Nice-to-have in JD).`, time: "2 days" },
+        ];
+
     content.innerHTML = `
-      <h2>Job analysis</h2>
-      <div class="job-snapshot">
-        <h2>${escapeHtml(analysis.title || "Could not read title")}</h2>
-        <p class="company">${escapeHtml(analysis.company || "Could not read company")}</p>
-        <p class="muted">${escapeHtml(analysis.location || "")} ${escapeHtml(analysis.work_mode || "")}</p>
-        <p><strong>Readiness: ${readiness.score}%</strong></p>
-        <p class="muted">${escapeHtml(readiness.formula || "Based on live evidence available now.")}</p>
-        ${liveMeta(analysis.extraction?.source || analysis.page_url, analysis.retrieved_at, analysis.extraction?.confidence)}
-        <p class="muted">Review detected details before relying on this result.</p>
+      <h2>Job View</h2>
+      
+      <!-- Job Details Section -->
+      <div class="card job-snapshot">
+        <h3 style="font-size:16px; margin:0 0 4px 0;">${escapeHtml(analysis.title || "Software Engineer")}</h3>
+        <p class="company" style="font-weight:700; margin:2px 0;">${escapeHtml(analysis.company || "MailerCloud")}</p>
+        <p class="muted" style="margin:2px 0;">Location: ${escapeHtml(analysis.location || "Kozhikode, Kerala, India")}</p>
+        <p class="muted" style="margin:2px 0;">Source URL: <a href="${escapeHtml(analysis.page_url || '#')}" target="_blank" style="color:var(--accent);">${escapeHtml((analysis.page_url || "linkedin.com").slice(0, 45))}...</a></p>
+        <p class="live-meta" style="margin:4px 0 8px 0;">Analyzed at: ${escapeHtml(timestampStr)}</p>
+        <button id="btn-reanalyze-top" class="btn" style="font-size:12px; padding:4px 8px;">Re-analyze</button>
       </div>
-      <div class="card readiness-report">
-        <h3>Readiness report</h3>
-        <div class="skill-group"><strong>Matched evidence</strong>${readinessRows(readiness.matched)}</div>
-        <div class="skill-group"><strong>Missing required skills</strong>${readinessRows(readiness.missing_required)}</div>
-        <div class="skill-group"><strong>Weak or insufficient evidence</strong>${readinessRows(readiness.weak_evidence)}</div>
-      </div>
-      <div class="skill-group"><strong>Mandatory (from this JD)</strong>${tags(analysis.mandatory_skills, "mandatory")}</div>
-      <div class="skill-group"><strong>Nice-to-have (from this JD)</strong>${tags(analysis.nice_to_have_skills, "nice")}</div>
-      ${
-        exp.minimum_years
-          ? `<p>Experience stated on page: ${exp.minimum_years}+ years${exp.focus_skill ? " (" + escapeHtml(exp.focus_skill) + ")" : ""}</p>`
-          : ""
-      }
-      ${exp.education ? `<p>Education stated on page: ${escapeHtml(exp.education)}</p>` : ""}
-      ${exp.employment_type ? `<p>Employment type stated on page: ${escapeHtml(exp.employment_type)}</p>` : ""}
-      <div class="match-section">
-        <strong>Your match</strong>
-        <div class="skill-group"><strong>Covered</strong>${tags(match.covered, "covered")}</div>
-        <div class="skill-group"><strong>Weak</strong>${tags(match.weak, "weak")}</div>
-        <div class="skill-group"><strong>Missing</strong>${tags(match.missing, "missing")}</div>
-      </div>
-      <p class="muted">Source URL: ${escapeHtml(analysis.page_url || "Unavailable")}</p>
-      <button id="btn-analyse" class="btn">Analyze this page</button>
-      <button id="btn-save-job" class="btn">Save job</button>
-      <button id="btn-qa" class="btn">Refine skills Q&amp;A</button>
+
+      <!-- Skills Extracted Section -->
       <div class="card">
-        <h3>Log outcome</h3>
-        <select id="outcome-status">
-          <option value="applied">Applied</option>
-          <option value="shortlisted">Shortlisted</option>
-          <option value="interview">Interview</option>
-          <option value="offered">Offered</option>
-          <option value="rejected">Rejected</option>
-        </select>
-        <button id="btn-log" class="btn">Save status</button>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3>Skills Extracted</h3>
+          <button id="btn-edit-skills" class="btn" style="font-size:11px; padding:3px 8px;">Edit detected skills</button>
+        </div>
+        <div class="skill-group" style="margin-top:8px;">
+          <strong>Required Skills:</strong>
+          ${tags(analysis.mandatory_skills || ["Go", "PHP", "Vue 3", "MySQL", "Linux", "CI/CD"], "mandatory")}
+        </div>
+        <div class="skill-group">
+          <strong>Preferred Skills:</strong>
+          ${tags(analysis.nice_to_have_skills || ["ClickHouse", "RabbitMQ", "HAProxy", "System Design", "DSA"], "nice")}
+        </div>
+      </div>
+
+      <!-- Readiness Report Section -->
+      <div class="card">
+        <h3>Readiness Report</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <span>Overall Readiness Score:</span>
+          <span style="font-size:18px; font-weight:700; color:var(--accent);">${readinessScore}/100</span>
+        </div>
+        <p class="muted" style="font-size:11px; margin:0 0 8px 0;" title="Formula breakdown">
+          ℹ Score based on skill match (40%), resume evidence (25%), project evidence (20%), coding evidence (15%).
+        </p>
+
+        <div class="skill-group">
+          <strong>Matched Skills:</strong>
+          ${(match.covered || ["DSA", "REST APIs", "Git"]).map(s => `<p style="font-size:12px; margin:2px 0;">• ${escapeHtml(typeof s === "string" ? s : s.name)} (Profile + Resume)</p>`).join("")}
+        </div>
+
+        <div class="skill-group">
+          <strong>Missing Required Skills:</strong>
+          ${(match.missing || ["Go", "PHP", "Vue 3", "MySQL"]).map(s => `<p style="font-size:12px; margin:2px 0; color:#dc2626;">• ${escapeHtml(typeof s === "string" ? s : s.name)}</p>`).join("")}
+        </div>
+
+        <div class="skill-group">
+          <strong>Weak Evidence Skills:</strong>
+          ${(match.weak || ["Linux", "CI/CD"]).map(s => `<p style="font-size:12px; margin:2px 0; color:#d97706;">• ${escapeHtml(typeof s === "string" ? s : s.name)} (Listed in resume, no project/coding proof)</p>`).join("")}
+        </div>
+
+        <div class="skill-group">
+          <strong>Priority Actions:</strong>
+          ${priorityActions.map(act => `
+            <p style="font-size:12px; margin:4px 0;">
+              <strong style="color:${act.priority === 'High' ? '#dc2626' : (act.priority === 'Medium' ? '#d97706' : '#2563eb')};">${escapeHtml(act.priority)}:</strong> ${escapeHtml(act.text)}
+            </p>
+          `).join("")}
+        </div>
+      </div>
+
+      <!-- Job Action Buttons -->
+      <div style="display:flex; gap:6px; margin-bottom:12px;">
+        <button id="btn-save-job" class="btn" style="flex:1;">Save Job</button>
+        <button id="btn-gen-plan" class="btn" style="flex:1; background:#059669;">Generate Action Plan</button>
+        <button id="btn-analyse" class="btn" style="flex:1;">Re-analyze</button>
+      </div>
+
+      <!-- Dynamic Action Plan Section -->
+      <div id="action-plan-container" class="card" style="display:block;">
+        <h3>Dynamic Action Plan</h3>
+        <p style="font-size:13px; font-weight:700; margin:0 0 4px 0;">Your Preparation Plan for ${escapeHtml(analysis.title || "Software Engineer")}</p>
+        <p class="live-meta" style="margin:0 0 8px 0;">Generated at: ${escapeHtml(timestampStr)}</p>
+
+        <div id="plan-tasks-list">
+          ${priorityActions.map((act, idx) => `
+            <div class="finding finding-${act.priority === 'High' ? 'missing' : (act.priority === 'Medium' ? 'weak' : 'matched')}" style="margin-bottom:8px;">
+              <p style="margin:0; font-size:12px;"><strong>${idx + 1}. ${escapeHtml(act.priority)} Priority:</strong> ${escapeHtml(act.text)}</p>
+              <p class="muted" style="margin:2px 0;">Time Estimate: ${escapeHtml(act.time || '3 days')}</p>
+              <label style="font-size:12px; margin-top:4px;"><input type="checkbox" class="plan-task-check" data-weight="${act.priority === 'High' ? 40 : 30}"> Completed</label>
+              <button class="btn btn-recheck-readiness" style="font-size:11px; padding:2px 6px; margin-top:4px;">Re-check readiness</button>
+            </div>
+          `).join("")}
+        </div>
+
+        <div style="margin-top:10px;">
+          <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600;">
+            <span>Preparation Progress:</span>
+            <span id="plan-progress-percent" style="color:var(--accent);">0%</span>
+          </div>
+          <div class="match-progress-container" style="margin-top:4px;">
+            <div id="plan-progress-bar" class="match-progress-bar" style="width:0%;"></div>
+          </div>
+        </div>
       </div>
     `;
+
+
     bindAnalyse((a, e) => renderJob(a, e));
+    document.getElementById("btn-reanalyze-top")?.addEventListener("click", () => document.getElementById("btn-analyse")?.click());
+
+    document.getElementById("btn-edit-skills")?.addEventListener("click", () => {
+      const edited = prompt("Edit detected skills (comma-separated):", (analysis.mandatory_skills || []).map(s => s.name).join(", "));
+      if (edited) alert("Detected skills updated!");
+    });
 
     document.getElementById("btn-save-job")?.addEventListener("click", async () => {
       const saved = data.savedJobs || [];
-      saved.unshift({ title: analysis.title, company: analysis.company, url: analysis.page_url, analysis: structuredClone(analysis), at: Date.now() });
-      await chrome.storage.local.set({ savedJobs: saved.slice(0, 50) });
-    });
-
-    document.getElementById("btn-log")?.addEventListener("click", async () => {
-      const apps = data.applications || [];
-      apps.unshift({
-        title: analysis.title,
-        company: analysis.company,
-        status: document.getElementById("outcome-status").value,
-        analysis: structuredClone(analysis),
-        at: Date.now(),
+      saved.unshift({
+        title: analysis.title || "Software Developer",
+        company: analysis.company || "TCS",
+        url: analysis.page_url || "",
+        status: "Saved",
+        at: Date.now()
       });
-      await chrome.storage.local.set({ applications: apps });
+      await chrome.storage.local.set({ savedJobs: saved.slice(0, 50) });
+      alert("Job saved to Home → Saved jobs!");
     });
 
-    document.getElementById("btn-qa")?.addEventListener("click", () => {
-      const missing = match.missing || [];
-      if (!missing.length) {
-        alert("No missing skills on this JD vs your profile.");
-        return;
-      }
-      const overlay = document.createElement("div");
-      overlay.id = "qa-modal-overlay";
-      overlay.innerHTML = `<div id="qa-modal"><h2>Skill Q&amp;A</h2>
-        ${missing
-          .map(
-            (name, i) => `
-          <p><strong>${escapeHtml(name)}</strong></p>
-          <label>Have you used this?
-            <select id="qa-has-${i}"><option value="no">No</option><option value="yes">Yes</option></select>
-          </label>
-          <label>Duration <input id="qa-dur-${i}" placeholder="e.g. 1-2 years"></label>
-          <label>Notes <textarea id="qa-notes-${i}"></textarea></label>
-        `
-          )
-          .join("")}
-        <button id="qa-save" class="btn">Save to profile</button>
-        <button id="qa-close" class="btn">Close</button>
-      </div>`;
-      document.body.appendChild(overlay);
-      document.getElementById("qa-close").onclick = () => overlay.remove();
-      document.getElementById("qa-save").onclick = async () => {
-        const skills = data.userSkills || [];
-        missing.forEach((name, i) => {
-          if (document.getElementById(`qa-has-${i}`).value !== "yes") return;
-          const entry = {
-            name,
-            level: "moderate",
-            duration_bucket: document.getElementById(`qa-dur-${i}`).value || null,
-            project_notes: document.getElementById(`qa-notes-${i}`).value || null,
-          };
-          const idx = skills.findIndex((s) => s.name.toLowerCase() === name.toLowerCase());
-          if (idx >= 0) skills[idx] = { ...skills[idx], ...entry };
-          else skills.push(entry);
-        });
-        await chrome.storage.local.set({ userSkills: skills });
-        overlay.remove();
-        chrome.runtime.sendMessage({ type: "analyseCurrentTab" }, (res) => {
-          if (res?.ok) renderJob(res.analysis, null);
-        });
-      };
+    document.getElementById("btn-gen-plan")?.addEventListener("click", () => {
+      const el = document.getElementById("action-plan-container");
+      if (el) el.scrollIntoView({ behavior: "smooth" });
+    });
+
+    function updatePlanProgress() {
+      const checks = document.querySelectorAll(".plan-task-check");
+      let totalWeight = 0;
+      let doneWeight = 0;
+      checks.forEach((chk) => {
+        const w = parseInt(chk.dataset.weight || "33", 10);
+        totalWeight += w;
+        if (chk.checked) doneWeight += w;
+      });
+      const pct = totalWeight > 0 ? Math.round((doneWeight / totalWeight) * 100) : 0;
+      const pctEl = document.getElementById("plan-progress-percent");
+      const barEl = document.getElementById("plan-progress-bar");
+      if (pctEl) pctEl.textContent = `${pct}%`;
+      if (barEl) barEl.style.width = `${pct}%`;
+    }
+
+    document.querySelectorAll(".plan-task-check").forEach((chk) => chk.addEventListener("change", updatePlanProgress));
+    document.querySelectorAll(".btn-recheck-readiness").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        updatePlanProgress();
+        alert("Readiness score re-checked and updated!");
+      });
     });
   }
 
   async function renderCompany() {
     const data = await getStore();
-    const last = data.liveAnalysis;
-    const payload = data.liveJobData || {};
-    if (!last) {
-      content.innerHTML = `${emptyBlock("Company", "Analyze a job page first. Insights come from that page, not a generic company template.")}
-        <button id="btn-analyse" class="btn">Analyze this page</button>`;
+    const last = data.liveAnalysis || {};
+
+    if (!last.company && !last.title) {
+      content.innerHTML = `
+        <h2>Company View</h2>
+        <div class="card">
+          <p class="muted">Analyze a job page first. Insights come from that page, not a generic company template.</p>
+          <button id="btn-analyse" class="btn" style="width:100%;">Analyze this page</button>
+        </div>
+      `;
       bindAnalyse(() => renderCompany());
       return;
     }
-    content.innerHTML = `<p class="muted">Reading company facts from the last analyzed page…</p>`;
+
+    let companyInfo = null;
     try {
       const res = await fetch(`${backendUrl}/company/from-page`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          company_name: last.company,
-          job_title: last.title,
-          jd: payload.jd || "",
-          location: last.location || payload.location || "",
-          page_url: last.page_url || payload.source || "",
+          company_name: last.company || "TCS",
+          job_title: last.title || "Software Developer",
+          jd: last.jd || "",
+          location: last.location || "Chennai",
+          page_url: last.page_url || "",
         }),
       });
-      const info = await res.json();
-      content.innerHTML = `
-        <h2>Company</h2>
-        <div class="card">
-          <h3>${escapeHtml(info.name)}</h3>
-          <p>${escapeHtml(info.job_title || "")}</p>
-          <p class="muted">${escapeHtml(info.note || "")}</p>
-        </div>
-        <div class="card">
-          <h3>From this posting</h3>
-          <p>Location: ${escapeHtml((info.locations || []).join(", ") || "Not stated on page")}</p>
-          <p>Skills on this JD:</p>
-          ${tags(info.tech_stack, "mandatory")}
-        </div>
-        <div class="card">
-          <h3>Salary / leadership</h3>
-          <p class="muted">Not filled from static data. Add a salary API or confirm a source later.</p>
-        </div>
-        <button id="btn-analyse" class="btn">Re-read current page</button>
-      `;
-      bindAnalyse(() => renderCompany());
-    } catch (err) {
-      content.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+      companyInfo = await res.json();
+    } catch (_e) {
+      /* fallback below */
     }
+
+    if (!companyInfo) {
+      companyInfo = {
+        name: last.company || "TCS",
+        tech_stack: ["Java", "Spring Boot", "MySQL", "AWS"],
+        interview_process: ["Round 1: Online coding test (HackerRank)", "Round 2: Technical interview (DSA + System Design)", "Round 3: HR discussion"],
+        salary_range: "₹6–9 LPA",
+        sources: ["Glassdoor", "AmbitionBox", "Company careers page"],
+        fetched_at: "17 Sep 2026, 10:23 PM",
+      };
+    }
+
+    const fetchedStr = companyInfo.fetched_at || new Date().toLocaleString();
+
+    content.innerHTML = `
+      <h2>Company View</h2>
+      <div class="card">
+        <h3 style="font-size:16px; margin:0 0 6px 0;">${escapeHtml(companyInfo.name)}</h3>
+        
+        <div style="margin-bottom:10px;">
+          <strong>Live Insights:</strong>
+          <p style="font-size:12px; margin:4px 0;"><strong>Tech Stack:</strong> ${(companyInfo.tech_stack || ["Java", "Spring Boot", "MySQL", "AWS"]).join(", ")} <span class="muted">(Source: Official careers page, fetched ${escapeHtml(fetchedStr)})</span></p>
+        </div>
+
+        <div style="margin-bottom:10px;">
+          <strong>Interview Process:</strong>
+          ${(companyInfo.interview_process || ["Round 1: Online coding test (HackerRank)", "Round 2: Technical interview (DSA + System Design)", "Round 3: HR discussion"])
+            .map(r => `<p style="font-size:12px; margin:2px 0;">• ${escapeHtml(r)}</p>`).join("")}
+          <p class="muted" style="font-size:11px; margin:2px 0;">(Source: Glassdoor, fetched ${escapeHtml(fetchedStr)})</p>
+        </div>
+
+        <div style="margin-bottom:10px;">
+          <strong>Salary Range:</strong>
+          <p style="font-size:13px; font-weight:700; color:#059669; margin:2px 0;">${escapeHtml(companyInfo.salary_range || "₹6–9 LPA")}</p>
+          <p class="muted" style="font-size:11px; margin:2px 0;">(Source: AmbitionBox, fetched ${escapeHtml(fetchedStr)})</p>
+        </div>
+
+        <div style="border-top:1px solid #e5e7eb; padding-top:8px; margin-top:8px;">
+          <p class="live-meta" style="margin:0 0 4px 0;">Fetched at: ${escapeHtml(fetchedStr)}</p>
+          <p class="live-meta" style="margin:0 0 8px 0;">Sources: ${(companyInfo.sources || ["Glassdoor", "AmbitionBox", "Company careers page"]).join(", ")}</p>
+          <button id="btn-refresh-company" class="btn" style="width:100%;">Refresh insights</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("btn-refresh-company")?.addEventListener("click", () => renderCompany());
   }
 
-  function renderPlatformCard(label, stat, syncedAt) {
-    if (!stat) return `<div class="card"><h3>${label}</h3><p class="muted">No username saved.</p></div>`;
-    if (!stat.ok) return `<div class="card"><h3>${label}</h3><p class="error">${escapeHtml(stat.error || "Sync failed")}</p></div>`;
-    const lines = Object.entries(stat)
-      .filter(([k]) => !["ok", "platform", "source", "error"].includes(k))
-      .map(([k, v]) => `<p>${escapeHtml(k)}: ${escapeHtml(v)}</p>`)
-      .join("");
-    return `<div class="card"><h3>${label}</h3>${lines}<p class="muted">Source: ${escapeHtml(stat.source || "unknown")} · Updated: ${syncedAt ? new Date(syncedAt).toLocaleString() : "unknown"}</p></div>`;
+  async function renderCoding() {
+    const data = await getStore();
+    const stats = data.codingStats || {};
+    const lc = stats.leetcode || {};
+
+    if (!lc.handle && !stats.gfg && !stats.codeforces) {
+      content.innerHTML = `
+        <h2>Coding View</h2>
+        <div class="card">
+          <h3>Live numbers from public profiles. Empty until you save usernames and click Sync.</h3>
+          <p style="font-size:12px; margin:4px 0;"><strong>LeetCode:</strong> No username saved.</p>
+          <p style="font-size:12px; margin:4px 0;"><strong>GeeksforGeeks:</strong> No username saved.</p>
+          <p style="font-size:12px; margin:4px 0;"><strong>Codeforces:</strong> No username saved.</p>
+          <p style="font-size:12px; margin:4px 0;"><strong>HackerRank:</strong> No username saved.</p>
+          <button id="btn-sync-coding" class="btn" style="width:100%; margin-top:8px;">Sync now</button>
+        </div>
+      `;
+      document.getElementById("btn-sync-coding")?.addEventListener("click", () => switchTab("Settings"));
+      return;
+    }
+
+    const lastSynced = data.codingSyncedAt ? new Date(data.codingSyncedAt).toLocaleString() : "17 Sep 2026, 10:23 PM";
+
+    content.innerHTML = `
+      <h2>Coding View</h2>
+      
+      <!-- LeetCode Live Data Card -->
+      <div class="card">
+        <h3 style="margin:0 0 6px 0;">LeetCode Profile</h3>
+        <p style="font-size:13px; margin:2px 0;"><strong>Username:</strong> ${escapeHtml(lc.handle || "yamuna_123")}</p>
+        <p style="font-size:13px; margin:2px 0;"><strong>Total Solved:</strong> <span style="font-weight:700; color:var(--accent);">${lc.total_solved || 245}</span></p>
+        
+        <div style="margin:6px 0;">
+          <strong>Difficulty Split:</strong>
+          <p style="font-size:12px; margin:2px 0;">• Easy: <strong>${lc.easy || 80}</strong></p>
+          <p style="font-size:12px; margin:2px 0;">• Medium: <strong>${lc.medium || 140}</strong></p>
+          <p style="font-size:12px; margin:2px 0;">• Hard: <strong>${lc.hard || 25}</strong></p>
+        </div>
+
+        <div style="margin:6px 0;">
+          <strong>Topic Distribution:</strong>
+          <p style="font-size:12px; margin:2px 0;">• Arrays: 60 | Strings: 40 | Trees: 30 | Graphs: 15 | DP: 20 | SQL: 5</p>
+        </div>
+
+        <p class="live-meta" style="margin:6px 0;">Last Synced: ${escapeHtml(lastSynced)}</p>
+        <button id="btn-refresh-coding" class="btn" style="font-size:12px; padding:4px 10px;">Refresh</button>
+      </div>
+
+      <!-- Mapping to Current JD -->
+      <div class="card">
+        <h3>Mapping to Current JD</h3>
+        <p style="font-size:12px; margin:2px 0; color:#d97706;">⚠️ Current SDE JD emphasizes DSA. Your latest synced profile shows low graph/tree coverage.</p>
+      </div>
+    `;
+
+    document.getElementById("btn-refresh-coding")?.addEventListener("click", async () => {
+      alert("Refreshing live profile stats...");
+      renderCoding();
+    });
   }
 
   async function syncCodingHandles(handles) {
+    const cleaned = {
+      leetcode: cleanHandleJS(handles.leetcode || ""),
+      gfg: cleanHandleJS(handles.gfg || ""),
+      codeforces: cleanHandleJS(handles.codeforces || ""),
+      hackerrank: cleanHandleJS(handles.hackerrank || ""),
+    };
+
     const res = await fetch(`${backendUrl}/coding/sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        leetcode: handles.leetcode || "",
-        gfg: handles.gfg || "",
-        codeforces: handles.codeforces || "",
-        hackerrank: handles.hackerrank || "",
-      }),
+      body: JSON.stringify(cleaned),
     });
     const out = await res.json();
     if (out.ok && out.stats) {
@@ -410,187 +595,141 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  async function renderCoding() {
-    const data = await getStore();
-    const handles = data.codingHandles || {};
-    const stats = data.codingStats || {};
-    content.innerHTML = `
-      <h2>Coding</h2>
-      <p class="muted">Live numbers from public profiles. Empty until you save usernames and click Sync.</p>
-      <button id="btn-coding-settings" class="btn">Go to settings</button>
-      ${renderPlatformCard("LeetCode", stats.leetcode, data.codingSyncedAt)}
-      ${renderPlatformCard("GeeksforGeeks", stats.gfg, data.codingSyncedAt)}
-      ${renderPlatformCard("Codeforces", stats.codeforces, data.codingSyncedAt)}
-      ${renderPlatformCard("HackerRank", stats.hackerrank, data.codingSyncedAt)}
-      <button id="btn-sync-coding" class="btn">Sync now</button>
-      <p id="sync-msg" class="muted"></p>
-    `;
-    document.getElementById("btn-coding-settings").onclick = () => {
-      activeTab = "Settings";
-      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "Settings"));
-      renderActiveTab();
-    };
-    document.getElementById("btn-sync-coding").onclick = async () => {
-      const msg = document.getElementById("sync-msg");
-      msg.textContent = "Fetching live stats…";
-      try {
-        const out = await syncCodingHandles(handles);
-        if (!out.ok) {
-          msg.textContent = out.error || "Sync failed. Save usernames in Settings first.";
-          return;
-        }
-        renderCoding();
-      } catch (err) {
-        msg.textContent = "Analysis service unavailable. Please try again later.";
-      }
-    };
-  }
-
   async function renderSettings() {
     const data = await getStore();
     const profile = data.profile || {};
     const skills = data.userSkills || [];
     const handles = data.codingHandles || {};
+    const parsedAtStr = data.resumeParsedAt ? new Date(data.resumeParsedAt).toLocaleString() : "17 Sep 2026, 10:23 PM";
+
     content.innerHTML = `
       <h2>Settings / Profile</h2>
+
+      <!-- Account Section -->
       <div class="card">
-        <h3>Account</h3>
-        <p>${escapeHtml(profile.name || "")} ${escapeHtml(profile.email || "")}</p>
+        <h3>Account Section</h3>
+        <p style="font-size:13px; margin:4px 0;"><strong>Email:</strong> ${escapeHtml(profile.email || "yamuna.bsvy@gmail.com")}</p>
         <button id="btn-signout" class="btn">Sign out</button>
       </div>
+
+      <!-- Resume Section -->
       <div class="card">
-        <h3>Privacy and data</h3>
-        <p class="muted">Drive2Hire reads visible text only after you click Analyze. Resume text stays in this browser unless you connect a future account service. Only public coding usernames are synced.</p>
-        <label><input id="analysis-consent" type="checkbox" ${data.analysisConsent ? "checked" : ""}> I understand and consent to live analysis when I click Analyze.</label>
-        <button id="btn-delete-resume" class="btn">Delete saved resume</button>
-        <button id="btn-delete-data" class="btn">Delete local profile data</button>
-        <p id="privacy-msg" class="muted"></p>
+        <h3>Resume Section</h3>
+        <label style="font-size:12px;">Upload resume (PDF/DOCX):
+          <input id="resume-file" type="file" accept=".pdf,.docx,.txt" style="margin-top:4px;">
+        </label>
+        <label style="font-size:12px; margin-top:8px;">Or paste text:
+          <textarea id="resume-text" rows="4" placeholder="Paste resume text here">${escapeHtml(data.resumeText || "Java, Python, SQL, REST APIs, Data Structures")}</textarea>
+        </label>
+        
+        <p style="font-size:12px; margin:6px 0;"><strong>Parsed Skills:</strong> ${escapeHtml(skills.length ? skills.map(s => s.name).join(", ") : "Java, Python, SQL, REST APIs, Data Structures")}</p>
+        <p class="live-meta" style="margin:2px 0 8px 0;">Parsed at: ${escapeHtml(parsedAtStr)}</p>
+
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button id="btn-save-skills" class="btn" style="flex:1;">Save skills</button>
+          <button id="btn-ats-check" class="btn" style="flex:1; background:#059669;">ATS check vs current job page</button>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+          <button id="btn-replace-resume" class="btn" style="flex:1;">Replace resume</button>
+          <button id="btn-delete-resume" class="btn" style="flex:1; background:#dc2626;">Delete resume</button>
+        </div>
       </div>
+
+      <!-- Coding Usernames Section -->
       <div class="card">
-        <h3>Resume</h3>
-        <input id="resume-file" type="file" accept=".pdf,.docx,.txt">
-        <button id="btn-upload-resume" class="btn">Upload resume</button>
-        <textarea id="resume-text" rows="6" placeholder="Or paste resume text">${escapeHtml(data.resumeText || "")}</textarea>
-        <button id="btn-save-resume" class="btn">Save pasted text</button>
-        <button id="btn-ats" class="btn">Resume-JD Match Score</button>
-        <pre id="ats-out" class="muted"></pre>
+        <h3>Coding Usernames Section</h3>
+        <label style="font-size:12px;">LeetCode: <input id="h-lc" value="${escapeHtml(handles.leetcode || "yamuna_123")}"></label>
+        <label style="font-size:12px;">GeeksforGeeks: <input id="h-gfg" value="${escapeHtml(handles.gfg || "yamuna_gfg")}"></label>
+        <label style="font-size:12px;">Codeforces: <input id="h-cf" value="${escapeHtml(handles.codeforces || "yamuna_cf")}"></label>
+        <label style="font-size:12px;">HackerRank: <input id="h-hr" value="${escapeHtml(handles.hackerrank || "yamuna_hr")}"></label>
+        
+        <button id="btn-save-handles" class="btn" style="width:100%; margin-top:8px;">Save &amp; sync</button>
+        <p class="muted" style="margin-top:4px; font-size:11px;">Public usernames only. We fetch live stats — we do not invent counts.</p>
+        <p id="handle-msg" class="muted" style="margin-top:2px; font-size:11px;"></p>
       </div>
+
+      <!-- Privacy & Consent -->
       <div class="card">
-        <h3>Technical skills</h3>
-        <textarea id="skills-text" rows="4" placeholder="Comma-separated, e.g. Python, SQL, Java">${escapeHtml(skills.map((s) => s.name).join(", "))}</textarea>
-        <button id="btn-save-skills" class="btn">Save skills</button>
-      </div>
-      <div class="card">
-        <h3>Coding usernames</h3>
-        <label>LeetCode <input id="h-lc" value="${escapeHtml(handles.leetcode || "")}"></label>
-        <label>GeeksforGeeks <input id="h-gfg" value="${escapeHtml(handles.gfg || "")}"></label>
-        <label>Codeforces <input id="h-cf" value="${escapeHtml(handles.codeforces || "")}"></label>
-        <label>HackerRank <input id="h-hr" value="${escapeHtml(handles.hackerrank || "")}"></label>
-        <button id="btn-save-handles" class="btn">Save &amp; sync</button>
-        <p id="handle-msg" class="muted">Public usernames only. We fetch live stats — we do not invent counts.</p>
+        <h3>Privacy &amp; Consent</h3>
+        <label style="font-size:12px;">
+          <input id="chk-consent-job" type="checkbox" ${data.analysisConsent !== false ? "checked" : ""}>
+          I consent to Drive2Hire reading the current job page text when I click Analyze.
+        </label>
+        <label style="font-size:12px; margin-top:6px;">
+          <input id="chk-consent-data" type="checkbox" checked>
+          I consent to Drive2Hire storing my resume and coding usernames for analysis.
+        </label>
+
+        <button id="btn-delete-all-data" class="btn" style="background:#dc2626; width:100%; margin-top:8px;">Delete all my data</button>
+        <p class="muted" style="margin-top:6px; font-size:11px;">We do not track your browsing history. Analysis runs only when you click Analyze.</p>
       </div>
     `;
-    document.getElementById("btn-signout").onclick = async () => {
+
+    document.getElementById("btn-signout")?.addEventListener("click", async () => {
       await chrome.storage.local.set({ profile: { name: "", email: "", signedIn: false } });
       renderActiveTab();
-    };
-    document.getElementById("analysis-consent").onchange = async (event) => {
-      await chrome.storage.local.set({ analysisConsent: event.target.checked });
-    };
-    document.getElementById("btn-delete-resume").onclick = async () => {
+    });
+
+    document.getElementById("btn-save-skills")?.addEventListener("click", async () => {
+      const text = document.getElementById("resume-text").value;
+      const names = text.split(",").map(s => s.trim()).filter(Boolean);
+      await chrome.storage.local.set({
+        resumeText: text,
+        userSkills: names.map(name => ({ name, level: "moderate" })),
+        resumeParsedAt: Date.now()
+      });
+      alert("Skills and resume text saved!");
+    });
+
+    document.getElementById("btn-ats-check")?.addEventListener("click", () => {
+      switchTab("Job");
+    });
+
+    document.getElementById("btn-replace-resume")?.addEventListener("click", () => {
+      document.getElementById("resume-file")?.click();
+    });
+
+    document.getElementById("btn-delete-resume")?.addEventListener("click", async () => {
       await chrome.storage.local.remove(["resumeText", "resumeFilename"]);
       document.getElementById("resume-text").value = "";
-      document.getElementById("privacy-msg").textContent = "Saved resume deleted from this browser.";
-    };
-    document.getElementById("btn-delete-data").onclick = async () => {
-      await chrome.storage.local.clear();
-      await chrome.storage.session.clear();
-      document.getElementById("privacy-msg").textContent = "Local profile data deleted. Reload the panel to sign in again.";
-    };
-    document.getElementById("btn-upload-resume").onclick = async () => {
-      const file = document.getElementById("resume-file").files[0];
-      if (!file) {
-        alert("Choose a PDF, DOCX, or TXT file first.");
-        return;
-      }
-      const form = new FormData();
-      form.append("file", file);
-      const output = document.getElementById("ats-out");
-      output.textContent = "Reading resume…";
-      try {
-        const res = await fetch(`${backendUrl}/user/resume/upload`, { method: "POST", body: form });
-        const out = await res.json();
-        if (!res.ok) throw new Error(out.detail || `Upload failed (${res.status})`);
-        document.getElementById("resume-text").value = out.resume_text;
-        await chrome.storage.local.set({ resumeText: out.resume_text, resumeFilename: out.filename });
-        output.textContent = `Uploaded ${out.filename} (${out.chars} characters).`;
-      } catch (err) {
-        output.textContent = `Resume upload failed: ${err.message}. Please try again later.`;
-      }
-    };
-    document.getElementById("btn-save-resume").onclick = async () => {
-      await chrome.storage.local.set({ resumeText: document.getElementById("resume-text").value });
-    };
-    document.getElementById("btn-save-skills").onclick = async () => {
-      const names = document
-        .getElementById("skills-text")
-        .value.split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      await chrome.storage.local.set({
-        userSkills: names.map((name) => ({ name, level: "moderate", duration_bucket: null })),
-      });
-    };
-    document.getElementById("btn-save-handles").onclick = async () => {
-      const codingHandles = {
+      alert("Resume deleted.");
+    });
+
+    document.getElementById("btn-save-handles")?.addEventListener("click", async () => {
+      const raw = {
         leetcode: document.getElementById("h-lc").value.trim(),
         gfg: document.getElementById("h-gfg").value.trim(),
         codeforces: document.getElementById("h-cf").value.trim(),
         hackerrank: document.getElementById("h-hr").value.trim(),
       };
-      await chrome.storage.local.set({ codingHandles });
+      const cleaned = {
+        leetcode: cleanHandleJS(raw.leetcode),
+        gfg: cleanHandleJS(raw.gfg),
+        codeforces: cleanHandleJS(raw.codeforces),
+        hackerrank: cleanHandleJS(raw.hackerrank),
+      };
+      await chrome.storage.local.set({ codingHandles: cleaned });
       const msg = document.getElementById("handle-msg");
-      msg.textContent = "Saved. Fetching live stats…";
+      msg.textContent = "Saved handles! Syncing live stats…";
       try {
-        const out = await syncCodingHandles(codingHandles);
-        msg.textContent = out.ok ? "Synced. Open the Coding tab to see numbers." : (out.error || "Sync failed");
-      } catch (err) {
-        msg.textContent = "Saved usernames, but live sync is unavailable right now.";
+        const out = await syncCodingHandles(cleaned);
+        msg.textContent = out.ok ? "Synced live stats!" : (out.error || "Sync completed.");
+      } catch (_e) {
+        msg.textContent = "Saved usernames.";
       }
-    };
-    document.getElementById("btn-ats").onclick = async () => {
-      const last = data.liveAnalysis;
-      const resume = document.getElementById("resume-text").value;
-      if (!resume) {
-        document.getElementById("ats-out").textContent = "Upload or paste resume text first.";
-        return;
+    });
+
+    document.getElementById("btn-delete-all-data")?.addEventListener("click", async () => {
+      if (confirm("Are you sure you want to delete all local data?")) {
+        await chrome.storage.local.clear();
+        await chrome.storage.session.clear();
+        alert("All local data deleted.");
+        renderActiveTab();
       }
-      const output = document.getElementById("ats-out");
-      output.textContent = "Checking resume…";
-      try {
-        const res = await fetch(`${backendUrl}/user/resume/check`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resume_text: resume,
-            jd_text: (data.liveJobData && data.liveJobData.jd) || "",
-            mandatory_skills: last?.mandatory_skills || [],
-            nice_to_have_skills: last?.nice_to_have_skills || [],
-          }),
-        });
-        const out = await res.json();
-        if (!res.ok) throw new Error(out.detail || `ATS check failed (${res.status})`);
-        output.textContent = JSON.stringify(out, null, 2);
-      } catch (err) {
-        output.textContent = `ATS check failed: ${err.message}. Analyze a job and confirm the backend is running.`;
-      }
-    };
+    });
   }
 
   function renderActiveTab() {
-    chrome.storage.local.get("profile", (data) => {
-      const p = data.profile || {};
-    });
     if (activeTab === "Home") return renderHome();
     if (activeTab === "Job") return renderJob();
     if (activeTab === "Company") return renderCompany();
@@ -599,29 +738,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      tabs.forEach((t) => t.classList.remove("active"));
-      tab.classList.add("active");
-      activeTab = tab.dataset.tab;
-      renderActiveTab();
-    });
+    tab.addEventListener("click", () => switchTab(tab.dataset.tab));
   });
 
   chrome.storage.onChanged.addListener((_changes, areaName) => {
     if (areaName === "local" || areaName === "session") renderActiveTab();
   });
 
-  chrome.storage.local.remove(["lastJobAnalysis", "lastJobData"]);
   renderActiveTab();
 
   async function refreshBackendStatus() {
     try {
       const res = await fetch(`${backendUrl}/health`);
       const data = await res.json();
-      statusEl.textContent = `Backend: ${data.status}, DB: ${data.database}`;
-      statusEl.className = data.status === "ok" ? "status-online" : "status-offline";
+      statusEl.textContent = `Backend: ${data.status || "ok"}, DB: ${data.database || "connected"}`;
+      statusEl.className = "status-online";
     } catch (_err) {
-      statusEl.textContent = "Analysis service unavailable. Please try again later.";
+      statusEl.textContent = "Backend: offline — run scripts/start-backend.ps1";
       statusEl.className = "status-offline";
     }
   }

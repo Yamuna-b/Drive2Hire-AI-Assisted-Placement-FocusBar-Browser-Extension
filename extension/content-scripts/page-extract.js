@@ -46,21 +46,29 @@
   let title = pickText(root, [
     "h1.job-details-jobs-unified-top-card__job-title",
     "h1.jobs-unified-top-card__job-title",
+    ".jobs-search__job-details h1",
+    ".scaffold-layout__detail h1",
     "h1.t-24",
     "h1.topcard__title",
     "h1.jd-header-title",
     ".jobsearch-JobInfoHeader-title",
     "h1",
   ]);
-  if (!title) title = (meta("og:title") || document.title || "").split("|")[0].trim();
+  if (!title) title = (meta("og:title") || document.title || "").split("|")[0].split("-")[0].trim();
 
   let company = pickText(root, [
     ".job-details-jobs-unified-top-card__company-name a",
     ".jobs-unified-top-card__company-name a",
+    ".job-details-jobs-unified-top-card__company-name",
+    ".jobs-unified-top-card__company-name",
     ".topcard__org-name-link",
     ".jd-header-comp-name",
     "a[href*='/company/']",
   ]);
+  if (!company) {
+    const compLink = root.querySelector('a[href*="/company/"]');
+    if (compLink && compLink.innerText) company = compLink.innerText.trim();
+  }
   if (!company) {
     const og = meta("og:site_name");
     if (og && !/linkedin|naukri|indeed|google/i.test(og)) company = og;
@@ -70,6 +78,7 @@
     ".job-details-jobs-unified-top-card__primary-description-container",
     ".jobs-unified-top-card__bullet",
     ".jobsearch-JobInfoHeader-subtitle",
+    ".jobs-unified-top-card__workplace-type",
   ]);
 
   let workMode = "";
@@ -77,19 +86,22 @@
   const modeMatch = pageText.match(/\b(On-site|Hybrid|Remote|Work from home)\b/i);
   if (modeMatch) workMode = modeMatch[1];
 
-    let jd = pickLong(root, [
-      ".jobs-description-content__text",
-      ".jobs-description__content",
-      ".jobs-box__html-content",
-      "#job-details",
-      ".jobsearch-JobComponent-description",
-      ".dang-inner-html",
-      "[class*='job-description']",
-      "article",
-    ]);
+  let jd = pickLong(root, [
+    ".jobs-description-content__text",
+    ".jobs-description__content",
+    ".jobs-box__html-content",
+    "#job-details",
+    ".jobs-search__job-details",
+    ".scaffold-layout__detail",
+    ".jobsearch-JobComponent-description",
+    ".dang-inner-html",
+    "[class*='job-description']",
+    "article",
+  ]);
   if (!jd || jd.length < 80) {
     jd = (document.body && document.body.innerText) || "";
   }
+
 
   if (jd.length > 20000) jd = jd.slice(0, 20000);
 

@@ -130,8 +130,23 @@ async function analyseTabId(tabId) {
   }
 }
 
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "complete" && tab?.url) {
+    if (tab.url.includes("linkedin.com/jobs") || tab.url.includes("naukri.com/job")) {
+      analyseTabId(tabId).catch(() => {});
+    }
+  }
+});
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message?.type) return false;
+  if (message.type === "liveCodingUpdate") {
+    const payload = message.payload || {};
+    chrome.storage.session.set({ liveCodingSession: payload });
+    chrome.storage.local.set({ liveCodingSession: payload });
+    sendResponse({ ok: true });
+    return true;
+  }
   if (message.type === "jobData") {
     handleJobData(message.payload)
       .then((analysis) => sendResponse({ ok: true, analysis }))
@@ -156,6 +171,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return false;
 });
+
 
 async function googleSignIn() {
   await chrome.storage.local.set({ googleClientId: GOOGLE_CLIENT_ID });
