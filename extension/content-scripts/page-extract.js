@@ -73,6 +73,17 @@
     const og = meta("og:site_name");
     if (og && !/linkedin|naukri|indeed|google/i.test(og)) company = og;
   }
+  if (!company && url.includes("linkedin.com")) {
+    if (/\blinkedin\b/i.test(document.body?.innerText || "")) company = "LinkedIn";
+  }
+  if (company) {
+    company = company
+      .split("\n")[0]
+      .split("·")[0]
+      .split("—")[0]
+      .replace(/Save|Actively reviewing|Easy Apply|Promoted by hirer|Over \d+ applicants/gi, "")
+      .trim();
+  }
 
   let location = pickText(root, [
     ".job-details-jobs-unified-top-card__primary-description-container",

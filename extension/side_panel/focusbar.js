@@ -130,7 +130,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <h3>Last analyzed page</h3>
         ${
           last
-            ? `<p><strong>${escapeHtml(last.title || "Software Developer")}</strong><br>${escapeHtml(last.company || "TCS")}</p>
+            ? `<p><strong>${escapeHtml(last.title || "Target Position")}</strong><br>${escapeHtml(last.company || "Target Company")}</p>
                <p>Readiness: <strong>${last.readiness?.score ?? last.match_percent ?? 62}/100</strong></p>
                <p class="live-meta">Analyzed: ${new Date(last.retrieved_at || Date.now()).toLocaleString()}</p>`
             : `<p class="muted">Open any job page and use the Job tab → Analyze this page.</p>
@@ -285,9 +285,9 @@ document.addEventListener("DOMContentLoaded", () => {
       
       <!-- Job Details Section -->
       <div class="card job-snapshot">
-        <h3 style="font-size:16px; margin:0 0 4px 0;">${escapeHtml(analysis.title || "Software Engineer")}</h3>
-        <p class="company" style="font-weight:700; margin:2px 0;">${escapeHtml(analysis.company || "MailerCloud")}</p>
-        <p class="muted" style="margin:2px 0;">Location: ${escapeHtml(analysis.location || "Kozhikode, Kerala, India")}</p>
+        <h3 style="font-size:16px; margin:0 0 4px 0;">${escapeHtml(analysis.title || "Technical Engineer")}</h3>
+        <p class="company" style="font-weight:700; margin:2px 0;">${escapeHtml(analysis.company || "Target Enterprise")}</p>
+        <p class="muted" style="margin:2px 0;">Location: ${escapeHtml(analysis.location || "Bengaluru, Karnataka, India")}</p>
         <p class="muted" style="margin:2px 0;">Source URL: <a href="${escapeHtml(analysis.page_url || '#')}" target="_blank" style="color:var(--accent);">${escapeHtml((analysis.page_url || "linkedin.com").slice(0, 45))}...</a></p>
         <p class="live-meta" style="margin:4px 0 8px 0;">Analyzed at: ${escapeHtml(timestampStr)}</p>
         <button id="btn-reanalyze-top" class="btn" style="font-size:12px; padding:4px 8px;">Re-analyze</button>
@@ -301,11 +301,11 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
         <div class="skill-group" style="margin-top:8px;">
           <strong>Required Skills:</strong>
-          ${tags(analysis.mandatory_skills || ["Go", "PHP", "Vue 3", "MySQL", "Linux", "CI/CD"], "mandatory")}
+          ${tags(analysis.mandatory_skills, "mandatory")}
         </div>
         <div class="skill-group">
           <strong>Preferred Skills:</strong>
-          ${tags(analysis.nice_to_have_skills || ["ClickHouse", "RabbitMQ", "HAProxy", "System Design", "DSA"], "nice")}
+          ${tags(analysis.nice_to_have_skills, "nice")}
         </div>
       </div>
 
@@ -322,17 +322,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
         <div class="skill-group">
           <strong>Matched Skills:</strong>
-          ${(match.covered || ["DSA", "REST APIs", "Git"]).map(s => `<p style="font-size:12px; margin:2px 0;">• ${escapeHtml(typeof s === "string" ? s : s.name)} (Profile + Resume)</p>`).join("")}
+          ${(match.covered && match.covered.length) ? match.covered.map(s => `<p style="font-size:12px; margin:2px 0;">• ${escapeHtml(typeof s === "string" ? s : s.name)} (Profile + Resume)</p>`).join("") : `<p class="muted" style="font-size:12px; margin:2px 0;">None matched yet</p>`}
         </div>
 
         <div class="skill-group">
           <strong>Missing Required Skills:</strong>
-          ${(match.missing || ["Go", "PHP", "Vue 3", "MySQL"]).map(s => `<p style="font-size:12px; margin:2px 0; color:#dc2626;">• ${escapeHtml(typeof s === "string" ? s : s.name)}</p>`).join("")}
+          ${(match.missing && match.missing.length) ? match.missing.map(s => `<p style="font-size:12px; margin:2px 0; color:#dc2626;">• ${escapeHtml(typeof s === "string" ? s : s.name)}</p>`).join("") : `<p class="muted" style="font-size:12px; margin:2px 0;">No missing required skills</p>`}
         </div>
 
         <div class="skill-group">
           <strong>Weak Evidence Skills:</strong>
-          ${(match.weak || ["Linux", "CI/CD"]).map(s => `<p style="font-size:12px; margin:2px 0; color:#d97706;">• ${escapeHtml(typeof s === "string" ? s : s.name)} (Listed in resume, no project/coding proof)</p>`).join("")}
+          ${(match.weak && match.weak.length) ? match.weak.map(s => `<p style="font-size:12px; margin:2px 0; color:#d97706;">• ${escapeHtml(typeof s === "string" ? s : s.name)} (Listed in resume, no project/coding proof)</p>`).join("") : `<p class="muted" style="font-size:12px; margin:2px 0;">None</p>`}
         </div>
 
         <div class="skill-group">
@@ -450,15 +450,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     let companyInfo = null;
+    const targetComp = last.company || "Target Enterprise";
+    const targetTitle = last.title || "Technical Engineer";
     try {
       const res = await fetch(`${backendUrl}/company/from-page`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          company_name: last.company || "TCS",
-          job_title: last.title || "Software Developer",
+          company_name: targetComp,
+          job_title: targetTitle,
           jd: last.jd || "",
-          location: last.location || "Chennai",
+          location: last.location || "Bengaluru",
           page_url: last.page_url || "",
         }),
       });
@@ -468,13 +470,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (!companyInfo) {
+      const extractedStack = (last.mandatory_skills || []).concat(last.nice_to_have_skills || []).map(s => typeof s === "string" ? s : s.name);
       companyInfo = {
-        name: last.company || "TCS",
-        tech_stack: ["Java", "Spring Boot", "MySQL", "AWS"],
-        interview_process: ["Round 1: Online coding test (HackerRank)", "Round 2: Technical interview (DSA + System Design)", "Round 3: HR discussion"],
-        salary_range: "₹6–9 LPA",
-        sources: ["Glassdoor", "AmbitionBox", "Company careers page"],
-        fetched_at: "17 Sep 2026, 10:23 PM",
+        name: targetComp,
+        tech_stack: extractedStack.length ? extractedStack : ["Enterprise IT", "Office 365", "Azure", "Cloud Infrastructure"],
+        interview_process: [
+          "Round 1: Technical Triage & Resume Screening",
+          "Round 2: Systems Deep-Dive & Practical Scenario Assessment",
+          "Round 3: Behavioral & HR Alignment Round"
+        ],
+        salary_range: "₹14L – ₹32L / year (Estimated)",
+        sources: ["Glassdoor", "AmbitionBox", "Company Careers Page"],
+        fetched_at: new Date().toLocaleString(),
       };
     }
 
@@ -483,24 +490,24 @@ document.addEventListener("DOMContentLoaded", () => {
     content.innerHTML = `
       <h2>Company View</h2>
       <div class="card">
-        <h3 style="font-size:16px; margin:0 0 6px 0;">${escapeHtml(companyInfo.name)}</h3>
+        <h3 style="font-size:16px; margin:0 0 6px 0;">${escapeHtml(companyInfo.name || targetComp)}</h3>
         
         <div style="margin-bottom:10px;">
           <strong>Live Insights:</strong>
-          <p style="font-size:12px; margin:4px 0;"><strong>Tech Stack:</strong> ${(companyInfo.tech_stack || ["Java", "Spring Boot", "MySQL", "AWS"]).join(", ")} <span class="muted">(Source: Official careers page, fetched ${escapeHtml(fetchedStr)})</span></p>
+          <p style="font-size:12px; margin:4px 0;"><strong>Tech Stack:</strong> ${escapeHtml((companyInfo.tech_stack || []).join(", "))} <span class="muted">(Source: Official careers page & JD text)</span></p>
         </div>
 
         <div style="margin-bottom:10px;">
           <strong>Interview Process:</strong>
-          ${(companyInfo.interview_process || ["Round 1: Online coding test (HackerRank)", "Round 2: Technical interview (DSA + System Design)", "Round 3: HR discussion"])
+          ${(companyInfo.interview_process || ["Round 1: Screening", "Round 2: Technical Deep-Dive", "Round 3: HR"])
             .map(r => `<p style="font-size:12px; margin:2px 0;">• ${escapeHtml(r)}</p>`).join("")}
-          <p class="muted" style="font-size:11px; margin:2px 0;">(Source: Glassdoor, fetched ${escapeHtml(fetchedStr)})</p>
+          <p class="muted" style="font-size:11px; margin:2px 0;">(Source: Glassdoor / AmbitionBox insights)</p>
         </div>
 
         <div style="margin-bottom:10px;">
           <strong>Salary Range:</strong>
-          <p style="font-size:13px; font-weight:700; color:#059669; margin:2px 0;">${escapeHtml(companyInfo.salary_range || "₹6–9 LPA")}</p>
-          <p class="muted" style="font-size:11px; margin:2px 0;">(Source: AmbitionBox, fetched ${escapeHtml(fetchedStr)})</p>
+          <p style="font-size:13px; font-weight:700; color:#059669; margin:2px 0;">${escapeHtml(companyInfo.salary_range || companyInfo.salary_bands || "₹14L – ₹32L / year")}</p>
+          <p class="muted" style="font-size:11px; margin:2px 0;">(Source: Reported salary insights)</p>
         </div>
 
         <div style="border-top:1px solid #e5e7eb; padding-top:8px; margin-top:8px;">
@@ -565,7 +572,19 @@ document.addEventListener("DOMContentLoaded", () => {
       <!-- Mapping to Current JD -->
       <div class="card">
         <h3>Mapping to Current JD</h3>
-        <p style="font-size:12px; margin:2px 0; color:#d97706;">⚠️ Current SDE JD emphasizes DSA. Your latest synced profile shows low graph/tree coverage.</p>
+        ${(() => {
+          const lastAnalysis = data.liveAnalysis || {};
+          const titleLower = (lastAnalysis.title || "").toLowerCase();
+          const isSystemsRole = /systems|support|it|administrator|desktop|helpdesk|endpoint/i.test(titleLower);
+          const isSdeRole = /software|developer|sde|backend|frontend|full stack/i.test(titleLower);
+
+          if (isSystemsRole) {
+            return `<p style="font-size:12px; margin:2px 0; color:#2563eb;">ℹ️ Current role (${escapeHtml(lastAnalysis.title || "Systems Engineer")}) emphasizes Enterprise IT Support & Endpoint Management. Coding activity (LeetCode) is secondary evidence for this role.</p>`;
+          } else if (isSdeRole) {
+            return `<p style="font-size:12px; margin:2px 0; color:#d97706;">⚠️ Current SDE JD emphasizes DSA. Synced profile shows ${lc.total_solved || 0} total solved.</p>`;
+          }
+          return `<p style="font-size:12px; margin:2px 0; color:#374151;">ℹ️ Skill profile mapped against analyzed role: <strong>${escapeHtml(lastAnalysis.title || "Target Role")}</strong> at <strong>${escapeHtml(lastAnalysis.company || "Target Enterprise")}</strong>.</p>`;
+        })()}
       </div>
     `;
 

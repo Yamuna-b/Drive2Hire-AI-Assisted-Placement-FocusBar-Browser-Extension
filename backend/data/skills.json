@@ -256,6 +256,19 @@
     { "name": "Compliance", "aliases": ["gdpr", "hipaa", "sox", "pci dss"] },
     { "name": "SOC 2", "aliases": [] },
     { "name": "ISO 27001", "aliases": [] },
-    { "name": "NIST", "aliases": [] }
+    { "name": "NIST", "aliases": [] },
+    { "name": "macOS", "aliases": ["mac", "mac os", "apple mac"] },
+    { "name": "Windows", "aliases": ["win10", "win11", "windows os"] },
+    { "name": "Office 365", "aliases": ["office 365", "microsoft 365", "m365", "o365"] },
+    { "name": "Microsoft 365 Administration", "aliases": ["m365 admin", "exchange", "teams", "sharepoint"] },
+    { "name": "ServiceNow", "aliases": ["servicenow", "itsm", "service now"] },
+    { "name": "End-User Support", "aliases": ["end user support", "desktop support", "it support", "tech support", "technical support", "helpdesk"] },
+    { "name": "Executive Support", "aliases": ["executive support", "white-glove support", "white glove support", "vip support"] },
+    { "name": "Virtual Desktops", "aliases": ["vdi", "virtual desktop", "citrix", "azure virtual desktop"] },
+    { "name": "Video Conferencing", "aliases": ["a/v", "av support", "event technology", "zoom", "teams meetings"] },
+    { "name": "Hardware Procurement", "aliases": ["procurement", "hardware lifecycle", "asset management"] },
+    { "name": "AI Fluency", "aliases": ["ai tools", "copilot", "claude", "ai-assisted diagnostics", "ai fluency"] },
+    { "name": "Active Directory", "aliases": ["ad", "azure ad", "entra id"] },
+    { "name": "Intune / JAMF", "aliases": ["intune", "jamf", "mdm", "mobile device management"] }
   ]
 }

@@ -6,11 +6,11 @@ EMPTY_SKILL_VALUES = {"", "na", "n/a", "n.a.", "none", "nil", "-", "--", "not ap
 
 LABELED_MANDATORY = re.compile(
     r"(?im)^\s*(?:must\s*have(?:\s+skills?)?|required(?:\s+skills?)?|mandatory(?:\s+skills?)?|"
-    r"key\s+skills?|minimum\s+qualifications?)\s*[:\-]\s*(.+)$"
+    r"key\s+skills?|minimum\s+qualifications?|basic\s+qualifications?|qualifications?|requirements?)\s*[:\-]?\s*(.+)$"
 )
 LABELED_NICE = re.compile(
     r"(?im)^\s*(?:good\s+to\s+have(?:\s+skills?)?|nice\s+to\s+have(?:\s+skills?)?|"
-    r"preferred(?:\s+skills?)?|optional(?:\s+skills?)?)\s*[:\-]\s*(.+)$"
+    r"preferred(?:\s+skills?)?|optional(?:\s+skills?)?|suggested\s+skills?)\s*[:\-]?\s*(.+)$"
 )
 EXPERIENCE_LINE = re.compile(
     r"(?i)minimum\s+(\d+)\s*year\(s\)?\s+of\s+experience|"
@@ -25,8 +25,7 @@ EMPLOYMENT_LINE = re.compile(r"(?i)\b(full[- ]time|part[- ]time|contract|interns
 
 JUNK_PHRASE = re.compile(
     r"(?i)easy apply|actively hiring|see more|show more|promoted|save job|"
-    r"^save$|^apply$|clicked apply|people clicked|reposted|messages|notifications|"
-    r"account executive|client executive|business systems analyst"
+    r"^save$|^apply$|clicked apply|people clicked|reposted|messages|notifications"
 )
 
 GENERIC_UNLESS_LABELED = {
@@ -59,7 +58,10 @@ def _is_junk_phrase(phrase: str) -> bool:
         return True
     if JUNK_PHRASE.search(p):
         return True
-    if p.lower() in {"applications", "actively", "bengaluru", "bangalore", "corporation", "india"}:
+    lower = p.lower()
+    if lower in {"applications", "actively", "bengaluru", "bangalore", "corporation", "india", "b.s.", "b.a.", "qualifications", "qualifications:", "basic qualifications", "preferred qualifications", "requirements", "responsibilities"}:
+        return True
+    if re.search(r"\b(b\.?s\.?|b\.?a\.?|b\.?tech|m\.?tech|b\.?e\.?|m\.?s\.?)\b", lower):
         return True
     return False
 
@@ -143,9 +145,9 @@ def _labeled_skills(jd_text: str, skills_config: list) -> tuple[list, list]:
         if _is_junk_phrase(phrase):
             return
         known = _match_known_skill(phrase, skills_config)
-        if not known and len(phrase) > 30:
-            return
-        name = known or phrase
+        if not known:
+            return  # Only accept validated skills from skills database
+        name = known
         key = name.lower()
         if key in seen:
             return
@@ -223,9 +225,21 @@ def parse_jd(jd_text: str) -> dict:
 
     # If still empty, add default tech skills inferred from text
     if not mandatory_objs and not nice_objs:
-        if re.search(r"sales|account executive|talent|business", text, re.I):
+        if re.search(r"systems engineer|technical systems|end-user|desktop support|macbook|macOS|windows|office 365|servicenow|azure", text, re.I):
+            mandatory_objs = [
+                {"name": "macOS", "duration": None, "source": "inferred"},
+                {"name": "Windows", "duration": None, "source": "inferred"},
+                {"name": "Office 365", "duration": None, "source": "inferred"},
+                {"name": "End-User Support", "duration": None, "source": "inferred"},
+            ]
+            nice_objs = [
+                {"name": "Azure", "duration": None, "source": "inferred"},
+                {"name": "ServiceNow", "duration": None, "source": "inferred"},
+                {"name": "AI Fluency", "duration": None, "source": "inferred"},
+            ]
+        elif re.search(r"account executive|sales executive|client account manager", text, re.I):
             mandatory_objs = [{"name": "Account Management", "duration": None, "source": "inferred"}, {"name": "CRM / Salesforce", "duration": None, "source": "inferred"}]
-            nice_objs = [{"name": "Talent Solutions", "duration": None, "source": "inferred"}, {"name": "Data Analytics", "duration": None, "source": "inferred"}]
+            nice_objs = [{"name": "Client Relations", "duration": None, "source": "inferred"}, {"name": "Data Analytics", "duration": None, "source": "inferred"}]
         else:
             mandatory_objs = [{"name": "Software Development", "duration": None, "source": "default"}, {"name": "Problem Solving", "duration": None, "source": "default"}]
 

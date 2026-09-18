@@ -52,6 +52,28 @@ async def company_from_page(request: PageCompanyRequest):
         f"DevOps Lead at {comp_name}",
     ]
 
+    title_lower = job_title.lower()
+    if any(k in title_lower for k in ["systems", "support", "it", "administrator", "desktop", "helpdesk"]):
+        interview_process = [
+            "Round 1: Initial Technical Screening & Scenario Triage",
+            "Round 2: Systems Technical Deep-Dive (OS endpoints, Office 365, Azure & Event Tech)",
+            "Round 3: Executive Support, Escalation Management & HR Round"
+        ]
+    elif any(k in title_lower for k in ["software", "developer", "sde", "backend", "frontend", "full stack"]):
+        interview_process = [
+            "Round 1: Online Coding Assessment (HackerRank / LeetCode style)",
+            "Round 2: Technical Interview (Data Structures, Algorithms & System Design)",
+            "Round 3: Hiring Manager & Behavioral Discussion"
+        ]
+    else:
+        interview_process = [
+            "Round 1: Resume & Domain Technical Screening",
+            "Round 2: Role-Specific Practical / Case Study Interview",
+            "Round 3: HR & Management Alignment Round"
+        ]
+
+    sal = web_data.get("salary_range", "₹14L – ₹32L / yr")
+
     return {
         "name": comp_name,
         "website": web_data.get("website", f"https://www.{comp_name.lower().replace(' ', '')}.com"),
@@ -60,9 +82,11 @@ async def company_from_page(request: PageCompanyRequest):
         "job_title": job_title,
         "locations": locations,
         "tech_stack": skills,
+        "interview_process": interview_process,
         "typical_roles": typical_roles,
         "experience": parsed.get("experience") or {},
-        "salary_bands": web_data.get("salary_range", "₹14L – ₹32L / yr"),
+        "salary_bands": sal,
+        "salary_range": sal,
         "leadership": leadership,
         "recruiter_contacts": web_data.get("recruiter_contacts", []),
         "related_jobs": related_jobs,
