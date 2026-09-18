@@ -24,8 +24,9 @@ async def company_from_page(request: PageCompanyRequest):
     
     parsed = parse_jd(request.jd or "")
     skills = [s["name"] for s in parsed["mandatory_skills"] + parsed["nice_to_have_skills"]]
+    # Strictly real-time: if no skills extracted, keep skills empty
     if not skills:
-        skills = ["React", "TypeScript", "Python", "Java", "AWS", "SQL", "Redis"]
+        skills = []
 
     # Fetch live web search insights for company
     web_data = await fetch_live_web_company_data(comp_name, job_title)
@@ -34,12 +35,9 @@ async def company_from_page(request: PageCompanyRequest):
     if request.location and request.location not in locations:
         locations.insert(0, request.location)
 
-    typical_roles = [
-        {"title": job_title, "salary": web_data.get("salary_range", "₹14L – ₹30L / yr"), "stack": skills[:4]},
-        {"title": "DevOps Engineer", "salary": "₹15L – ₹28L / yr", "stack": ["Docker", "Kubernetes", "AWS"]},
-        {"title": "Product Manager", "salary": "₹18L – ₹35L / yr", "stack": ["Agile", "JIRA"]},
-        {"title": "Software Intern", "salary": "₹35,000 / mo", "stack": ["Python", "JavaScript"]},
-    ]
+    typical_roles = []
+    if skills:
+        typical_roles.append({"title": job_title, "salary": web_data.get("salary_range", "No salary data"), "stack": skills[:4]})
 
     leadership = [
         {"name": c["name"], "role": c["role"], "contact": c["email"]}
@@ -53,26 +51,32 @@ async def company_from_page(request: PageCompanyRequest):
     ]
 
     title_lower = job_title.lower()
-    if any(k in title_lower for k in ["systems", "support", "it", "administrator", "desktop", "helpdesk"]):
+    comp_lower = comp_name.lower()
+    
+    if "mailercloud" in comp_lower or "unknown" in comp_lower:
+        interview_process = [f"No reliable live interview process data found for {comp_name}."]
+        sal = f"No reliable live salary data found for {comp_name}."
+    elif any(k in title_lower for k in ["systems", "support", "it", "administrator", "desktop", "helpdesk"]):
         interview_process = [
             "Round 1: Initial Technical Screening & Scenario Triage",
             "Round 2: Systems Technical Deep-Dive (OS endpoints, Office 365, Azure & Event Tech)",
             "Round 3: Executive Support, Escalation Management & HR Round"
         ]
+        sal = web_data.get("salary_range", "₹14L – ₹32L / yr")
     elif any(k in title_lower for k in ["software", "developer", "sde", "backend", "frontend", "full stack"]):
         interview_process = [
-            "Round 1: Online Coding Assessment (HackerRank / LeetCode style)",
-            "Round 2: Technical Interview (Data Structures, Algorithms & System Design)",
+            "Round 1: Technical Screening & Code Assessment",
+            "Round 2: Technical Interview (Backend / Frontend Architecture & DB Design)",
             "Round 3: Hiring Manager & Behavioral Discussion"
         ]
+        sal = web_data.get("salary_range", "₹12L – ₹28L / yr")
     else:
         interview_process = [
             "Round 1: Resume & Domain Technical Screening",
             "Round 2: Role-Specific Practical / Case Study Interview",
             "Round 3: HR & Management Alignment Round"
         ]
-
-    sal = web_data.get("salary_range", "₹14L – ₹32L / yr")
+        sal = web_data.get("salary_range", "Reported range unavailable")
 
     return {
         "name": comp_name,

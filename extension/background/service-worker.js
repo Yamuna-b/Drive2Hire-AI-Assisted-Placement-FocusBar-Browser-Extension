@@ -11,8 +11,16 @@ const GOOGLE_SCOPES = [
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
 
-chrome.tabs.onActivated.addListener(({ tabId }) => {
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   chrome.storage.session.set({ linkedTabId: tabId });
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const session = await chrome.storage.session.get(["liveAnalysis"]);
+    if (session.liveAnalysis && session.liveAnalysis.page_url && tab.url && session.liveAnalysis.page_url !== tab.url) {
+      await chrome.storage.session.remove(["liveAnalysis", "liveJobData"]);
+      console.log("[JOB EXTRACTOR] Switched tabs — discarded previous tab job data.");
+    }
+  } catch (_e) {}
 });
 
 chrome.runtime.onInstalled.addListener(async () => {

@@ -136,13 +136,23 @@
     };
   }
 
+  console.log("[JOB EXTRACTOR]", {
+    URL: url,
+    TITLE: title || "Not found",
+    COMPANY: company || "Not found",
+    LOCATION: location || "Not found",
+    WORK_MODE: workMode || "Not found",
+    JD_LENGTH: jd.length,
+    SOURCE: "DOM",
+  });
+
   return {
     ok: true,
     payload: {
       title: title || "",
       company: company || "",
       location: location || "",
-      work_mode: workMode,
+      work_mode: workMode || "",
       jd,
       source: url,
       is_job_like: looksLikeJob(jd, url),

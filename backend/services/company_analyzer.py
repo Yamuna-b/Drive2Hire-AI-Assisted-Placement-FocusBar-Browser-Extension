@@ -59,7 +59,7 @@ def extract_roles_from_jd(title: str, jd: str) -> List[str]:
         if re.search(pattern, combined_text):
             roles.append(role)
     
-    return list(set(roles)) if roles else ["Software Engineer"]
+    return list(set(roles)) if roles else []
 
 
 def extract_tech_from_jd(jd: str) -> List[str]:
@@ -122,16 +122,17 @@ def extract_locations_from_jd(jd: str) -> List[str]:
     
     locations = []
     
-    # Common Indian cities for tech
+    # Common Indian & global tech locations
     city_patterns = {
+        "Kozhikode, Kerala": r"kozhikode|calicut",
+        "Kochi, Kerala": r"kochi|cochin",
+        "Trivandrum, Kerala": r"trivandrum|thiruvananthapuram",
         "Bangalore": r"bangalore|bengaluru|blr",
         "Hyderabad": r"hyderabad|hyd",
         "Pune": r"pune",
         "Mumbai": r"mumbai|bombay",
-        "Delhi": r"delhi|delhi|new delhi",
+        "Delhi / NCR": r"delhi|new delhi|gurgaon|gurugram|noida",
         "Chennai": r"chennai|madras",
-        "Gurgaon": r"gurgaon|gurugram",
-        "Noida": r"noida",
         "Kolkata": r"kolkata|calcutta",
         "Remote": r"remote|work from home|wfh",
         "On-site": r"on-site|on site|office",
@@ -143,7 +144,7 @@ def extract_locations_from_jd(jd: str) -> List[str]:
         if re.search(pattern, jd_lower):
             locations.append(location)
     
-    return locations or ["Remote/On-site"]
+    return locations
 
 
 def extract_salary_from_jd(jd: str) -> Optional[str]:
@@ -186,10 +187,10 @@ def infer_industry(company_name: str, jd: str) -> Optional[str]:
     
     for industry, keywords in industry_keywords.items():
         for keyword in keywords:
-            if keyword in jd_lower or keyword in company_name.lower():
+            if keyword in jd_lower or (company_name and keyword in company_name.lower()):
                 return industry
     
-    return "Technology"
+    return None
 
 
 def get_or_create_company(db: Session, company_name: str) -> Company:
@@ -281,31 +282,35 @@ async def fetch_live_web_company_data(company_name: str, job_title: str) -> Dict
         ]
 
 
-    # Extract locations from snippets or provide comprehensive Indian & Global tech hubs
+    # Extract locations from snippets or JD text
     locations = []
-    for city in ["Bangalore (Bengaluru)", "Hyderabad", "Chennai", "Pune", "Mumbai", "Gurgaon / Noida", "Seattle (HQ)", "New York", "London", "San Francisco"]:
-        city_keyword = city.split()[0].lower()
-        if city_keyword in snippet_text.lower() or city_keyword in comp.lower():
+    for city in ["Bangalore", "Bengaluru", "Hyderabad", "Chennai", "Pune", "Mumbai", "Gurgaon", "Noida", "Kozhikode", "Kochi", "Trivandrum", "Seattle", "New York", "London", "San Francisco"]:
+        if city.lower() in snippet_text.lower():
             locations.append(city)
 
+    # Strictly real-time: if no locations found in live web search, keep empty as requested
     if not locations:
-        locations = ["Bangalore (Bengaluru)", "Hyderabad", "Chennai", "Seattle (Global HQ)", "Remote"]
+        locations = []
 
-    # Extract or calculate salary range
-    salary_range = "₹14L – ₹32L / year (India)" if any(k in comp.lower() for k in ["tcs", "infosys", "wipro", "reccsar", "kevell"]) else "$125,000 – $165,000 / year (Global)"
-    if "₹" in snippet_text or "LPA" in snippet_text or "lakh" in snippet_text.lower():
-        salary_range = "₹12L – ₹28L / year (Reported on AmbitionBox / Glassdoor)"
+    # Extract salary range or return clear status
+    salary_range = "No live salary data found"
+    if "₹" in snippet_text or "lpa" in snippet_text.lower() or "lakh" in snippet_text.lower():
+        sal_match = re.search(r"(?:₹|INR)\s*\d+[\d.,\-]*\s*(?:lakhs?|lpa|l|cr)", snippet_text, re.I)
+        salary_range = sal_match.group(0) if sal_match else "Reported on AmbitionBox / Glassdoor"
+    elif "$" in snippet_text:
+        sal_match = re.search(r"\$\d+[\d.,\-]*\s*(?:k|year|yr|mo)?", snippet_text, re.I)
+        salary_range = sal_match.group(0) if sal_match else "Reported on Glassdoor / Indeed"
 
-    # Professionals to contact
-    professionals = [
-        {"name": f"Talent Acquisition Lead ({comp})", "role": "Senior Technical Recruiter", "email": recruiter_emails[0], "action": "Mail for referral / job application"},
-        {"name": f"University Recruiting Team", "role": "Placement & Campus Hiring", "email": recruiter_emails[1] if len(recruiter_emails) > 1 else recruiter_emails[0], "action": "Email for early career & intern roles"},
-        {"name": f"Engineering Director ({comp})", "role": "Engineering Hiring Manager", "email": recruiter_emails[-1], "action": "Connect via LinkedIn / Direct Outreach"},
-    ]
+    # Professionals to contact (only if real emails found)
+    professionals = []
+    if recruiter_emails:
+        professionals = [
+            {"name": f"Talent Acquisition ({comp})", "role": "Recruiter", "email": recruiter_emails[0], "action": "Outreach for referral / application"},
+        ]
 
     return {
         "name": comp,
-        "website": website_url,
+        "website": website_url if snippet_text else f"https://www.{domain_guess}",
         "company_type": "Product & Engineering" if not any(k in comp.lower() for k in ["consulting", "services"]) else "IT Services & Consulting",
         "industry": infer_industry(comp, snippet_text),
         "locations": locations,

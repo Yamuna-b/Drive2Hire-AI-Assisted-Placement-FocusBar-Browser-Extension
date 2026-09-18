@@ -118,8 +118,8 @@ document.addEventListener("DOMContentLoaded", () => {
       <div class="card">
         <h3>Coding (live sync)</h3>
         ${
-          lc.ok || lc.total_solved || lc.handle
-            ? `<p><strong>LeetCode @${escapeHtml(lc.handle || "yamuna_123")}</strong>: ${lc.total_solved || 245} solved (Easy ${lc.easy || 80} / Med ${lc.medium || 140} / Hard ${lc.hard || 25})</p>`
+          (lc.ok || lc.total_solved || lc.handle) && lc.handle
+            ? `<p><strong>LeetCode @${escapeHtml(lc.handle)}</strong>: ${lc.total_solved || 0} solved (Easy ${lc.easy || 0} / Med ${lc.medium || 0} / Hard ${lc.hard || 0})</p>`
             : `<p class="muted">No live stats yet. Add your public usernames in Settings → Sync now.</p>
                <button id="btn-home-settings" class="btn">Go to Settings</button>`
         }
@@ -129,9 +129,9 @@ document.addEventListener("DOMContentLoaded", () => {
       <div class="card">
         <h3>Last analyzed page</h3>
         ${
-          last
-            ? `<p><strong>${escapeHtml(last.title || "Target Position")}</strong><br>${escapeHtml(last.company || "Target Company")}</p>
-               <p>Readiness: <strong>${last.readiness?.score ?? last.match_percent ?? 62}/100</strong></p>
+          last && last.title
+            ? `<p><strong>${escapeHtml(last.title)}</strong><br>${escapeHtml(last.company || "Company not specified")}</p>
+               <p>Readiness: <strong>${last.readiness?.score ?? last.match_percent ?? 0}/100</strong></p>
                <p class="live-meta">Analyzed: ${new Date(last.retrieved_at || Date.now()).toLocaleString()}</p>`
             : `<p class="muted">Open any job page and use the Job tab → Analyze this page.</p>
                <button id="btn-home-browse" class="btn">Browse Jobs</button>`
@@ -274,21 +274,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const priorityActions = (analysis.readiness?.priority_actions && analysis.readiness.priority_actions.length)
       ? analysis.readiness.priority_actions
-      : [
-          { priority: "High", text: `Learn ${missingNames[0] || "Go"} basics (Required in current JD; absent from profile).`, time: "3 days" },
-          { priority: "Medium", text: `Build a project with ${missingNames[1] || "Vue 3 / MySQL"} (Required in current JD).`, time: "5 days" },
-          { priority: "Low", text: `Explore ${missingNames[2] || "Linux / Docker"} basics (Nice-to-have in JD).`, time: "2 days" },
-        ];
+      : (missingNames.length ? missingNames.slice(0, 3).map((name, idx) => ({
+          priority: idx === 0 ? "High" : (idx === 1 ? "High" : "Medium"),
+          text: `Learn ${name} basics for this role.`,
+          time: "3 days"
+        })) : [
+          { priority: "Low", text: "No missing skills identified. Review system design & resume tips.", time: "1 day" }
+        ]);
 
     content.innerHTML = `
       <h2>Job View</h2>
       
       <!-- Job Details Section -->
       <div class="card job-snapshot">
-        <h3 style="font-size:16px; margin:0 0 4px 0;">${escapeHtml(analysis.title || "Technical Engineer")}</h3>
-        <p class="company" style="font-weight:700; margin:2px 0;">${escapeHtml(analysis.company || "Target Enterprise")}</p>
-        <p class="muted" style="margin:2px 0;">Location: ${escapeHtml(analysis.location || "Bengaluru, Karnataka, India")}</p>
-        <p class="muted" style="margin:2px 0;">Source URL: <a href="${escapeHtml(analysis.page_url || '#')}" target="_blank" style="color:var(--accent);">${escapeHtml((analysis.page_url || "linkedin.com").slice(0, 45))}...</a></p>
+        <h3 style="font-size:16px; margin:0 0 4px 0;">${escapeHtml(analysis.title || "Position Title Not Stated")}</h3>
+        <p class="company" style="font-weight:700; margin:2px 0;">${escapeHtml(analysis.company || "Company Not Specified")}</p>
+        <p class="muted" style="margin:2px 0;">Location: ${escapeHtml(analysis.location || "Location Not Stated")}</p>
+        <p class="muted" style="margin:2px 0;">Source URL: <a href="${escapeHtml(analysis.page_url || '#')}" target="_blank" style="color:var(--accent);">${escapeHtml((analysis.page_url || "Current Page").slice(0, 45))}...</a></p>
         <p class="live-meta" style="margin:4px 0 8px 0;">Analyzed at: ${escapeHtml(timestampStr)}</p>
         <button id="btn-reanalyze-top" class="btn" style="font-size:12px; padding:4px 8px;">Re-analyze</button>
       </div>
@@ -575,13 +577,17 @@ document.addEventListener("DOMContentLoaded", () => {
         ${(() => {
           const lastAnalysis = data.liveAnalysis || {};
           const titleLower = (lastAnalysis.title || "").toLowerCase();
+          const mandatoryNames = (lastAnalysis.mandatory_skills || []).map(s => typeof s === "string" ? s : s.name);
+          const niceNames = (lastAnalysis.nice_to_have_skills || []).map(s => typeof s === "string" ? s : s.name);
+          const allSkills = mandatoryNames.concat(niceNames);
+
           const isSystemsRole = /systems|support|it|administrator|desktop|helpdesk|endpoint/i.test(titleLower);
-          const isSdeRole = /software|developer|sde|backend|frontend|full stack/i.test(titleLower);
+          const isBackendRole = /backend|software|developer|sde|full stack/i.test(titleLower) || (allSkills.includes("Go") || allSkills.includes("PHP") || allSkills.includes("MySQL") || allSkills.includes("ClickHouse") || allSkills.includes("RabbitMQ"));
 
           if (isSystemsRole) {
             return `<p style="font-size:12px; margin:2px 0; color:#2563eb;">ℹ️ Current role (${escapeHtml(lastAnalysis.title || "Systems Engineer")}) emphasizes Enterprise IT Support & Endpoint Management. Coding activity (LeetCode) is secondary evidence for this role.</p>`;
-          } else if (isSdeRole) {
-            return `<p style="font-size:12px; margin:2px 0; color:#d97706;">⚠️ Current SDE JD emphasizes DSA. Synced profile shows ${lc.total_solved || 0} total solved.</p>`;
+          } else if (isBackendRole) {
+            return `<p style="font-size:12px; margin:2px 0; color:#d97706;">⚠️ Current SDE JD emphasizes backend development (${escapeHtml(mandatoryNames.join(", ") || "Go, PHP, MySQL, ClickHouse, CI/CD")}). Your profile shows strong DSA but no direct project evidence for ${escapeHtml(mandatoryNames.slice(0, 3).join("/") || "Go/PHP")}.</p>`;
           }
           return `<p style="font-size:12px; margin:2px 0; color:#374151;">ℹ️ Skill profile mapped against analyzed role: <strong>${escapeHtml(lastAnalysis.title || "Target Role")}</strong> at <strong>${escapeHtml(lastAnalysis.company || "Target Enterprise")}</strong>.</p>`;
         })()}
@@ -634,10 +640,11 @@ document.addEventListener("DOMContentLoaded", () => {
       <!-- Resume Section -->
       <div class="card">
         <h3>Resume Section</h3>
-        <label style="font-size:12px;">Upload resume (PDF/DOCX):
-          <input id="resume-file" type="file" accept=".pdf,.docx,.txt" style="margin-top:4px;">
+        <label style="font-size:12px;">Upload resume (PDF/DOCX/TXT):
+          <input id="resume-file" type="file" accept=".pdf,.docx,.txt" style="margin-top:4px; display:block; width:100%;">
         </label>
-        <label style="font-size:12px; margin-top:8px;">Or paste text:
+        <button id="btn-parse-resume" class="btn" style="width:100%; margin-top:6px; font-size:12px; background:#059669;">Parse Uploaded Resume</button>
+        <label style="font-size:12px; margin-top:10px; display:block;">Or paste text:
           <textarea id="resume-text" rows="4" placeholder="Paste resume text here">${escapeHtml(data.resumeText || "Java, Python, SQL, REST APIs, Data Structures")}</textarea>
         </label>
         
@@ -657,10 +664,10 @@ document.addEventListener("DOMContentLoaded", () => {
       <!-- Coding Usernames Section -->
       <div class="card">
         <h3>Coding Usernames Section</h3>
-        <label style="font-size:12px;">LeetCode: <input id="h-lc" value="${escapeHtml(handles.leetcode || "yamuna_123")}"></label>
-        <label style="font-size:12px;">GeeksforGeeks: <input id="h-gfg" value="${escapeHtml(handles.gfg || "yamuna_gfg")}"></label>
-        <label style="font-size:12px;">Codeforces: <input id="h-cf" value="${escapeHtml(handles.codeforces || "yamuna_cf")}"></label>
-        <label style="font-size:12px;">HackerRank: <input id="h-hr" value="${escapeHtml(handles.hackerrank || "yamuna_hr")}"></label>
+        <label style="font-size:12px; display:block; margin:4px 0;">LeetCode: <input id="h-lc" value="${escapeHtml(handles.leetcode || "yamuna_123")}" style="width:100%; margin-top:2px;"></label>
+        <label style="font-size:12px; display:block; margin:4px 0;">GeeksforGeeks: <input id="h-gfg" value="${escapeHtml(handles.gfg || "yamuna_gfg")}" style="width:100%; margin-top:2px;"></label>
+        <label style="font-size:12px; display:block; margin:4px 0;">Codeforces: <input id="h-cf" value="${escapeHtml(handles.codeforces || "yamuna_cf")}" style="width:100%; margin-top:2px;"></label>
+        <label style="font-size:12px; display:block; margin:4px 0;">HackerRank: <input id="h-hr" value="${escapeHtml(handles.hackerrank || "yamuna_hr")}" style="width:100%; margin-top:2px;"></label>
         
         <button id="btn-save-handles" class="btn" style="width:100%; margin-top:8px;">Save &amp; sync</button>
         <p class="muted" style="margin-top:4px; font-size:11px;">Public usernames only. We fetch live stats — we do not invent counts.</p>
@@ -670,11 +677,11 @@ document.addEventListener("DOMContentLoaded", () => {
       <!-- Privacy & Consent -->
       <div class="card">
         <h3>Privacy &amp; Consent</h3>
-        <label style="font-size:12px;">
+        <label style="font-size:12px; display:block;">
           <input id="chk-consent-job" type="checkbox" ${data.analysisConsent !== false ? "checked" : ""}>
           I consent to Drive2Hire reading the current job page text when I click Analyze.
         </label>
-        <label style="font-size:12px; margin-top:6px;">
+        <label style="font-size:12px; margin-top:6px; display:block;">
           <input id="chk-consent-data" type="checkbox" checked>
           I consent to Drive2Hire storing my resume and coding usernames for analysis.
         </label>
@@ -684,9 +691,41 @@ document.addEventListener("DOMContentLoaded", () => {
       </div>
     `;
 
+    document.getElementById("chk-consent-job")?.addEventListener("change", async (e) => {
+      await chrome.storage.local.set({ analysisConsent: e.target.checked });
+    });
+
     document.getElementById("btn-signout")?.addEventListener("click", async () => {
       await chrome.storage.local.set({ profile: { name: "", email: "", signedIn: false } });
       renderActiveTab();
+    });
+
+    const parseResumeFile = async (file) => {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const text = evt.target.result || "";
+        document.getElementById("resume-text").value = text;
+        const rawSkills = text.split(/[\n,;]/).map(s => s.trim()).filter(s => s.length > 2 && s.length < 30);
+        const unique = Array.from(new Set(rawSkills));
+        await chrome.storage.local.set({
+          resumeText: text,
+          userSkills: unique.map(name => ({ name, level: "moderate" })),
+          resumeParsedAt: Date.now()
+        });
+        alert("Resume file loaded and parsed!");
+        renderSettings();
+      };
+      reader.readAsText(file);
+    };
+
+    document.getElementById("btn-parse-resume")?.addEventListener("click", () => {
+      const fileInput = document.getElementById("resume-file");
+      if (fileInput?.files?.length) {
+        parseResumeFile(fileInput.files[0]);
+      } else {
+        alert("Please select a resume file first.");
+      }
     });
 
     document.getElementById("btn-save-skills")?.addEventListener("click", async () => {

@@ -180,23 +180,51 @@ def _extract_experience(jd_text: str) -> dict:
     if focus:
         skill_focus = _normalize_whitespace(focus.group(1))
     
-    # Extract Level and Relocation info
-    level = "L4 / Mid-Level"
+    # Extract Level and Relocation info strictly if present
+    level = None
     if re.search(r"\bsenior|sr\b|lead|principal|l5|l6", jd_text or "", re.I):
-        level = "L5 / Senior Level"
+        level = "Senior"
     elif re.search(r"\bintern|junior|jr|fresh|entry|l3", jd_text or "", re.I):
-        level = "L3 / Entry Level"
+        level = "Entry Level"
+    elif re.search(r"\bmid[- ]level|mid\b", jd_text or "", re.I):
+        level = "Mid-Level"
 
-    relocation = "Yes" if re.search(r"relocat|relocation", jd_text or "", re.I) else "Not stated"
+    relocation = "Yes" if re.search(r"relocat|relocation", jd_text or "", re.I) else None
+    emp_match = EMPLOYMENT_LINE.search(jd_text or "")
+    employment_type = emp_match.group(1) if emp_match else None
 
     return {
         "minimum_years": int(years) if years else None,
         "focus_skill": skill_focus,
         "education": edu,
-        "employment_type": (EMPLOYMENT_LINE.search(jd_text or "").group(1) if EMPLOYMENT_LINE.search(jd_text or "") else "Full-time"),
+        "employment_type": employment_type,
         "level": level,
         "relocation": relocation,
     }
+
+
+def _dedupe_skills_list(skill_objs: list) -> list:
+    seen = set()
+    deduped = []
+    alias_map = {
+        "vue": "Vue 3",
+        "vuejs": "Vue 3",
+        "vue.js": "Vue 3",
+        "rest": "REST API",
+        "restful": "REST API",
+        "m365": "Office 365",
+        "microsoft 365": "Office 365",
+        "anthropic api": "AI Fluency",
+    }
+    for item in skill_objs:
+        name = item.get("name", "")
+        norm = alias_map.get(name.lower(), name)
+        key = norm.lower()
+        if key not in seen:
+            seen.add(key)
+            item["name"] = norm
+            deduped.append(item)
+    return deduped
 
 
 def parse_jd(jd_text: str) -> dict:
@@ -223,25 +251,16 @@ def parse_jd(jd_text: str) -> dict:
             if not any(s["name"].lower() == name.lower() for s in nice_objs):
                 nice_objs.append({"name": name, "duration": None, "source": "body"})
 
-    # If still empty, add default tech skills inferred from text
+    # If no skills could be extracted, return empty lists with warning as requested
     if not mandatory_objs and not nice_objs:
-        if re.search(r"systems engineer|technical systems|end-user|desktop support|macbook|macOS|windows|office 365|servicenow|azure", text, re.I):
-            mandatory_objs = [
-                {"name": "macOS", "duration": None, "source": "inferred"},
-                {"name": "Windows", "duration": None, "source": "inferred"},
-                {"name": "Office 365", "duration": None, "source": "inferred"},
-                {"name": "End-User Support", "duration": None, "source": "inferred"},
-            ]
-            nice_objs = [
-                {"name": "Azure", "duration": None, "source": "inferred"},
-                {"name": "ServiceNow", "duration": None, "source": "inferred"},
-                {"name": "AI Fluency", "duration": None, "source": "inferred"},
-            ]
-        elif re.search(r"account executive|sales executive|client account manager", text, re.I):
-            mandatory_objs = [{"name": "Account Management", "duration": None, "source": "inferred"}, {"name": "CRM / Salesforce", "duration": None, "source": "inferred"}]
-            nice_objs = [{"name": "Client Relations", "duration": None, "source": "inferred"}, {"name": "Data Analytics", "duration": None, "source": "inferred"}]
-        else:
-            mandatory_objs = [{"name": "Software Development", "duration": None, "source": "default"}, {"name": "Problem Solving", "duration": None, "source": "default"}]
+        experience = _extract_experience(text)
+        return {
+            "mandatory_skills": [],
+            "nice_to_have_skills": [],
+            "experience": experience,
+            "source": "page_text",
+            "warning": "No skills could be extracted from the job description."
+        }
 
     experience = _extract_experience(text)
     if experience.get("minimum_years") and mandatory_objs:
@@ -250,9 +269,12 @@ def parse_jd(jd_text: str) -> dict:
             if not focus or item["name"].lower() in focus or focus in item["name"].lower():
                 item["duration"] = f"{experience['minimum_years']}+ years"
 
+    clean_mand = _dedupe_skills_list(mandatory_objs)
+    clean_nice = _dedupe_skills_list([s for s in nice_objs if s["name"].lower() not in {m["name"].lower() for m in clean_mand}])
+
     return {
-        "mandatory_skills": mandatory_objs,
-        "nice_to_have_skills": nice_objs,
+        "mandatory_skills": clean_mand,
+        "nice_to_have_skills": clean_nice,
         "experience": experience,
         "source": "page_text",
     }

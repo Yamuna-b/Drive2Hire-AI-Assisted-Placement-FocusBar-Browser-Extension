@@ -87,14 +87,31 @@ def _build_readiness(required, preferred, user_skills, resume_text, coding_stats
     # Generate dynamic priority actions based on ACTUAL missing skills in this JD
     missing_skills = [f["skill"] for f in findings if f["status"] == "missing"]
     priority_actions = []
-    if missing_skills:
-        priority_actions.append({"priority": "High", "text": f"Learn {missing_skills[0]} basics (Required in current JD; absent from profile).", "time": "3 days"})
-        if len(missing_skills) > 1:
-            priority_actions.append({"priority": "High", "text": f"Build a hands-on project with {missing_skills[1]} (Required in current JD).", "time": "4 days"})
-        if len(missing_skills) > 2:
-            priority_actions.append({"priority": "Medium", "text": f"Explore {missing_skills[2]} fundamentals & query tuning.", "time": "2 days"})
-    else:
-        priority_actions.append({"priority": "Low", "text": "Profile matches all key JD requirements. Review system design & resume tips.", "time": "1 day"})
+    
+    skill_action_map = {
+        "Go": ("High", "Learn Go basics and concurrency (Required in JD; absent from profile).", "5 days"),
+        "PHP": ("High", "Practice PHP 8 API development and object-oriented patterns.", "4 days"),
+        "Vue 3": ("High", "Build a hands-on Vue 3 project (Frontend requirement in JD).", "5 days"),
+        "MySQL": ("High", "Practice MySQL schema design, indexing, and query optimization.", "4 days"),
+        "ClickHouse": ("Medium", "Learn ClickHouse basics for high-performance analytics.", "3 days"),
+        "RabbitMQ": ("Medium", "Explore RabbitMQ message queues and event infrastructure.", "3 days"),
+        "macOS": ("High", "Learn macOS endpoint administration and shell scripting.", "3 days"),
+        "Windows": ("High", "Review Windows enterprise endpoint support & management.", "3 days"),
+        "Office 365": ("Medium", "Master Office 365 administration (Exchange, Teams, SharePoint).", "3 days"),
+        "Azure": ("Medium", "Learn Azure cloud infrastructure & integration basics.", "4 days"),
+        "ServiceNow": ("Medium", "Explore ServiceNow ITSM incident & change workflows.", "2 days"),
+    }
+
+    for skill in missing_skills[:5]:
+        if skill in skill_action_map:
+            prio, text, tm = skill_action_map[skill]
+            priority_actions.append({"priority": prio, "text": text, "time": tm})
+        else:
+            prio = "High" if len(priority_actions) < 2 else "Medium"
+            priority_actions.append({"priority": prio, "text": f"Learn {skill} fundamentals for this position.", "time": "3 days"})
+
+    if not priority_actions:
+        priority_actions.append({"priority": "Low", "text": "Profile matches all key JD requirements. Review system design & interview prep.", "time": "1 day"})
 
     return {
         "score": readiness_score,
@@ -117,21 +134,37 @@ async def analyse_job(request: JobAnalyseRequest):
     page_url = request.page_url or ""
     
     company_name = (request.company or "").strip()
-    if not company_name or company_name.lower() in ("unknown company", "could not read company"):
-        if "linkedin.com" in page_url.lower() or "linkedin is the world" in jd_text.lower():
-            company_name = "LinkedIn"
-        elif "tcs" in jd_text.lower()[:300]:
-            company_name = "TCS"
-        elif "mailercloud" in jd_text.lower()[:300]:
-            company_name = "MailerCloud"
+    if company_name.lower() in ("unknown company", "could not read company"):
+        company_name = ""
 
     job_title = (request.title or "").strip()
     if not job_title:
         first_line = jd_text.splitlines()[0] if jd_text else ""
         if len(first_line) > 3 and len(first_line) < 60 and not re.search(r"http|www", first_line):
             job_title = first_line.strip()
-        else:
-            job_title = "Technical Systems Engineer"
+
+    loc = (request.location or "").strip()
+    if loc.lower() in ("unknown", "location not stated"):
+        loc = ""
+    if not loc:
+        if re.search(r"kozhikode|calicut", jd_text, re.I):
+            loc = "Kozhikode, Kerala, India"
+        elif re.search(r"bengaluru|bangalore", jd_text, re.I):
+            loc = "Bengaluru, Karnataka, India"
+        elif re.search(r"hyderabad", jd_text, re.I):
+            loc = "Hyderabad, Telangana, India"
+        elif re.search(r"pune", jd_text, re.I):
+            loc = "Pune, Maharashtra, India"
+        elif re.search(r"chennai", jd_text, re.I):
+            loc = "Chennai, Tamil Nadu, India"
+        elif re.search(r"remote|work from home", jd_text, re.I):
+            loc = "Remote"
+
+    work_mode = (request.work_mode or "").strip()
+    if not work_mode:
+        mode_match = re.search(r"\b(On-site|Hybrid|Remote|Work from home)\b", jd_text, re.I)
+        if mode_match:
+            work_mode = mode_match.group(1)
 
     parsed = parse_jd(jd_text)
     user_skills = [s.model_dump() for s in request.user_skills]
@@ -156,9 +189,9 @@ async def analyse_job(request: JobAnalyseRequest):
 
     return {
         "title": job_title,
-        "company": company_name or "Target Enterprise",
-        "location": request.location or "Bengaluru, Karnataka, India",
-        "work_mode": request.work_mode or "Hybrid",
+        "company": company_name,
+        "location": loc,
+        "work_mode": work_mode,
         "page_url": page_url,
         "jd_excerpt": jd_text[:400],
         "mandatory_skills": parsed["mandatory_skills"],
